@@ -15,7 +15,11 @@ Dibuat dengan Kotlin, Jetpack Compose, Media3 (ExoPlayer), Room, dan NewPipeExtr
 - **Playlist & favorit lokal**: buat, ganti nama, dan hapus playlist; tandai lagu favorit. Riwayat dan
   "paling sering diputar" tersimpan di database lokal (Room).
 - **Jarvis (asisten suara)**: ketuk ikon mikrofon di beranda, lalu ucapkan "Jarvis" diikuti perintah.
-  - Kata "Jarvis" dideteksi **offline** di HP dengan sherpa-onnx (model keyword spotting ±5 MB di `assets/kws/`).
+  - Kata "Jarvis" dideteksi **offline** di HP dengan mencocokkan suara yang terdengar dengan **contoh suara
+    pengguna sendiri** (tekan lama tombol mikrofon → *Latih suara Jarvis*, rekam 3–5 kali). Model bahasa Inggris
+    siap pakai terbukti tidak mengenali pelafalan "Jarvis" ala Indonesia, sedangkan contoh suara pengguna cocok
+    satu sama lain dengan jelas. Memakai model embedding suara openWakeWord (`assets/oww/`, ±2.4 MB) dan DTW
+    (`jarvis/TemplateMatcher.kt`). Kepekaan bisa diatur: Normal / Peka / Sangat peka.
   - Perintah direkam dengan pengenal suara bawaan Android (bahasa Indonesia), lalu diartikan oleh
     `jarvis/VoiceCommand.kt`: *stop/jeda*, *lanjut/play*, *skip/lagu berikutnya*, *lagu sebelumnya*,
     *volume naik/turun*, *volume 50*, dan *putar <judul/artis>* untuk mencari dan langsung memutar lagu.

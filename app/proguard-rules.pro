@@ -45,3 +45,6 @@
 -dontwarn org.brotli.dec.**
 -dontwarn org.tukaani.xz.**
 -dontwarn org.objectweb.asm.**
+
+## ONNX Runtime (wake word Jarvis). Kode native memanggil kelas Java ini lewat JNI.
+-keep class ai.onnxruntime.** { *; }

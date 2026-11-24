@@ -27,8 +27,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 /**
@@ -85,8 +88,13 @@ class JarvisService : Service() {
             _running.value = true
             // Siapkan "Yes, sir?" lebih dulu supaya jawabannya langsung terdengar.
             scope.launch { voice.preload(WAKE_REPLY) }
-            watchCalls()
-            watchSensitivity()
+            scope.launch {
+                // Contoh suara pengguna dimuat dulu (±1 detik), baru mulai mendengarkan.
+                withContext(Dispatchers.Default) { detector.reloadTemplates() }
+                updateNotification()
+                watchCalls()
+                watchSettings()
+            }
         }
         return START_NOT_STICKY
     }
@@ -118,23 +126,30 @@ class JarvisService : Service() {
 
     // ---- Wake word & perintah ----
 
-    /** Kalau kepekaan diubah di aplikasi, detektor dimulai ulang dengan pengaturan baru. */
-    private fun watchSensitivity() = scope.launch {
-        var first = true
-        JarvisSettings.sensitivity.collect {
-            if (first) {
-                first = false
-                return@collect
-            }
-            if (!busy && !pausedForCall) {
+    /**
+     * Mengikuti perubahan di aplikasi:
+     * - kepekaan diubah → detektor dimulai ulang,
+     * - contoh suara ditambah / dihapus → contoh dimuat ulang,
+     * - layar "Latih suara" sedang merekam → detektor berhenti dulu supaya mikrofon bebas.
+     */
+    private fun watchSettings() = scope.launch {
+        var loadedVersion = VoiceSamples.version.value
+        combine(JarvisSettings.sensitivity, VoiceSamples.version, VoiceSamples.enrolling) { s, v, e -> Triple(s, v, e) }
+            .drop(1)
+            .collect { (_, version, enrolling) ->
+                if (busy || pausedForCall) return@collect
                 detector.stop()
-                startDetector()
+                if (version != loadedVersion) {
+                    loadedVersion = version
+                    withContext(Dispatchers.Default) { detector.reloadTemplates() }
+                    updateNotification()
+                }
+                if (!enrolling) startDetector()
             }
-        }
     }
 
     private fun startDetector() {
-        if (pausedForCall) return
+        if (pausedForCall || VoiceSamples.enrolling.value) return
         detector.start(JarvisSettings.sensitivity.value) {
             // Dipanggil dari thread mikrofon; tangani di main thread.
             scope.launch { onWake() }
@@ -270,10 +285,20 @@ class JarvisService : Service() {
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(if (pausedForCall) "Jarvis dijeda" else "Jarvis aktif")
+            .setContentTitle(
+                when {
+                    pausedForCall -> "Jarvis dijeda"
+                    started && detector.templateCount == 0 -> "Jarvis belum dilatih"
+                    else -> "Jarvis aktif"
+                },
+            )
             .setContentText(
-                if (pausedForCall) "Sedang telepon. Jarvis lanjut mendengarkan setelah telepon selesai."
-                else "Ucapkan \"Jarvis\" lalu perintahmu",
+                when {
+                    pausedForCall -> "Sedang telepon. Jarvis lanjut mendengarkan setelah telepon selesai."
+                    started && detector.templateCount == 0 ->
+                        "Tekan lama tombol mikrofon di Nautify → Latih suara Jarvis"
+                    else -> "Ucapkan \"Jarvis\" lalu perintahmu"
+                },
             )
             .setContentIntent(open)
             .addAction(0, "Matikan Jarvis", stop)

@@ -74,6 +74,10 @@ android {
     }
 
     packaging {
+        jniLibs {
+            // sherpa-onnx (versi statis) dan onnxruntime-android sama-sama bisa membawa libonnxruntime.so.
+            pickFirsts += "**/libonnxruntime.so"
+        }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
@@ -122,10 +126,13 @@ dependencies {
     // Ekstraksi YouTube / YouTube Music (pencarian, URL stream, lagu terkait).
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.27.1")
 
-    // Jarvis: wake word "Jarvis" (keyword spotting) dan suara Kokoro, offline di HP.
+    // Jarvis: suara Kokoro, offline di HP.
     // AAR resmi sherpa-onnx v1.12.15 (onnxruntime ditautkan statis), dari
     // https://github.com/k2-fsa/sherpa-onnx/releases/tag/v1.12.15
     implementation(files("libs/sherpa-onnx-static-link-onnxruntime-1.12.15.aar"))
+    // Wake word "Jarvis": menjalankan model embedding suara (assets/oww) untuk dicocokkan dengan
+    // contoh suara pengguna.
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.32.0")
     // Mengekstrak model Kokoro (.tar.bz2) yang diunduh saat Jarvis pertama diaktifkan.
     implementation("org.apache.commons:commons-compress:1.27.1")
 

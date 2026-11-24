@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import com.nada.music.jarvis.JarvisSensitivity
 import com.nada.music.jarvis.JarvisSettings
+import com.nada.music.jarvis.VoiceSamples
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -59,13 +60,18 @@ fun JarvisButton() {
     val model by KokoroModel.state.collectAsState()
     var showVoiceDialog by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    var showTraining by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { KokoroModel.refresh(context) }
 
     fun startJarvis() {
         JarvisService.start(context)
-        Toast.makeText(context, "Jarvis aktif. Ucapkan \"Jarvis\" lalu perintahmu.", Toast.LENGTH_LONG).show()
-        if (!KokoroModel.isReady(context)) showVoiceDialog = true
+        when {
+            // Jarvis mengenali suara dari contoh rekaman pengguna, jadi latih dulu kalau belum ada.
+            VoiceSamples.count(context) == 0 -> showTraining = true
+            !KokoroModel.isReady(context) -> showVoiceDialog = true
+            else -> Toast.makeText(context, "Jarvis aktif. Ucapkan \"Jarvis\" lalu perintahmu.", Toast.LENGTH_LONG).show()
+        }
     }
 
     val permissions = buildList {
@@ -119,13 +125,28 @@ fun JarvisButton() {
                 showSettings = false
                 showVoiceDialog = true
             },
+            onOpenTraining = {
+                showSettings = false
+                showTraining = true
+            },
             onDismiss = { showSettings = false },
         )
+    }
+    if (showTraining) {
+        VoiceTrainingDialog(onDismiss = {
+            showTraining = false
+            if (running && !KokoroModel.isReady(context)) showVoiceDialog = true
+        })
     }
 }
 
 @Composable
-private fun JarvisSettingsDialog(model: KokoroModel.State, onOpenVoice: () -> Unit, onDismiss: () -> Unit) {
+private fun JarvisSettingsDialog(
+    model: KokoroModel.State,
+    onOpenVoice: () -> Unit,
+    onOpenTraining: () -> Unit,
+    onDismiss: () -> Unit,
+) {
     val context = LocalContext.current
     val sensitivity by JarvisSettings.sensitivity.collectAsState()
     LaunchedEffect(Unit) { JarvisSettings.load(context) }
@@ -134,6 +155,15 @@ private fun JarvisSettingsDialog(model: KokoroModel.State, onOpenVoice: () -> Un
         title = { Text("Pengaturan Jarvis") },
         text = {
             Column {
+                Text("Suara Anda", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "Jarvis mengenali panggilan dari contoh rekaman suara Anda. " +
+                        "Contoh tersimpan: ${VoiceSamples.count(context)}.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextButton(onClick = onOpenTraining) { Text("Latih suara Jarvis") }
+                Spacer(Modifier.height(8.dp))
                 Text("Kepekaan panggilan \"Jarvis\"", style = MaterialTheme.typography.titleSmall)
                 Text(
                     "Kalau Jarvis sering tidak menyahut, pilih yang lebih peka. " +

@@ -8,17 +8,14 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * Seberapa mudah Jarvis terpanggil.
  *
- * [boost] menaikkan skor kata "Jarvis" saat dicari, [threshold] adalah batas keyakinan minimal.
+ * [threshold] adalah jarak maksimal antara suara yang terdengar dan contoh suara pengguna
+ * (0 = identik). Diuji pada rekaman pengguna: ucapan "Jarvis" berjarak 0,04–0,07, kalimat lain ≥ 0,11.
  * Makin peka, makin mudah terpanggil, tapi makin sering juga salah dengar.
  */
-enum class JarvisSensitivity(val label: String, val boost: Float, val threshold: Float) {
-    NORMAL("Normal", boost = 1.0f, threshold = 0.25f),
-    HIGH("Peka", boost = 2.0f, threshold = 0.15f),
-    VERY_HIGH("Sangat peka", boost = 3.0f, threshold = 0.08f),
-    ;
-
-    /** Baris kata kunci untuk sherpa-onnx: token BPE, lalu boost (:), threshold (#), dan nama (@). */
-    val keywords: String get() = "▁JA R VI S :$boost #$threshold @JARVIS"
+enum class JarvisSensitivity(val label: String, val threshold: Float) {
+    NORMAL("Normal", threshold = 0.060f),
+    HIGH("Peka", threshold = 0.072f),
+    VERY_HIGH("Sangat peka", threshold = 0.085f),
 }
 
 /** Pengaturan Jarvis yang disimpan di HP. */
