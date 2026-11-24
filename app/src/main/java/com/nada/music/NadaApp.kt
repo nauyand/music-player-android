@@ -7,6 +7,7 @@ import coil.disk.DiskCache
 import com.nada.music.audio.AudioSettingsStore
 import com.nada.music.data.MusicRepository
 import com.nada.music.data.db.AppDatabase
+import com.nada.music.data.importer.SpotifyPlaylist
 import com.nada.music.data.lyrics.LrcLib
 import com.nada.music.data.youtube.NewPipeDownloader
 import okhttp3.OkHttpClient
@@ -43,7 +44,7 @@ class NadaApp : Application(), ImageLoaderFactory {
         AudioSettingsStore.init(this)
 
         val db = AppDatabase.create(this)
-        repository = MusicRepository(db.dao(), LrcLib(okHttpClient))
+        repository = MusicRepository(db.dao(), LrcLib(okHttpClient), SpotifyPlaylist(okHttpClient))
     }
 
     override fun newImageLoader(): ImageLoader =

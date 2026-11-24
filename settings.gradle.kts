@@ -15,5 +15,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Nada"
+rootProject.name = "Nautify"
 include(":app")

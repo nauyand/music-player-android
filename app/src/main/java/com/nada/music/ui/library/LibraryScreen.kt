@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -60,12 +61,14 @@ fun LibraryScreen(onOpenPlaylist: (Long) -> Unit, contentPadding: PaddingValues)
     val playlists by repository.playlists.collectAsState(initial = emptyList())
     val localSongs by repository.localSongs.collectAsState(initial = emptyList())
     var creating by remember { mutableStateOf(false) }
+    var importing by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
             colors = com.nada.music.ui.glass.transparentTopBarColors(),
             title = { Text("Pustaka", fontWeight = FontWeight.Bold) },
             actions = {
+                IconButton(onClick = { importing = true }) { Icon(Icons.Rounded.Link, "Impor playlist") }
                 IconButton(onClick = { creating = true }) { Icon(Icons.Rounded.Add, "Playlist baru") }
             },
         )
@@ -92,7 +95,8 @@ fun LibraryScreen(onOpenPlaylist: (Long) -> Unit, contentPadding: PaddingValues)
             if (playlists.isEmpty()) {
                 item {
                     Text(
-                        "Belum ada playlist. Ketuk + untuk membuat, atau pilih \"Tambah ke playlist\" dari menu lagu.",
+                        "Belum ada playlist. Ketuk + untuk membuat, ketuk ikon link untuk mengimpor dari " +
+                            "YouTube atau Spotify, atau pilih \"Tambah ke playlist\" dari menu lagu.",
                         modifier = Modifier.padding(horizontal = 16.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -123,6 +127,16 @@ fun LibraryScreen(onOpenPlaylist: (Long) -> Unit, contentPadding: PaddingValues)
                 }
             }
         }
+    }
+
+    if (importing) {
+        ImportPlaylistDialog(
+            onDismiss = { importing = false },
+            onImported = { id ->
+                importing = false
+                onOpenPlaylist(id)
+            },
+        )
     }
 
     if (creating) {

@@ -1,5 +1,7 @@
 package com.nada.music.ui.home
 
+import androidx.compose.ui.res.stringResource
+import com.nada.music.R
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -24,6 +26,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -39,7 +44,17 @@ import com.nada.music.ui.components.Artwork
 import com.nada.music.ui.components.EmptyState
 import com.nada.music.ui.components.SectionTitle
 import com.nada.music.ui.components.SongRow
+import com.nada.music.ui.components.friendlyError
+import com.nada.music.ui.jarvis.JarvisButton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -53,7 +68,7 @@ sealed interface Recommendations {
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class HomeViewModel(repository: MusicRepository) : ViewModel() {
+class HomeViewModel(private val repository: MusicRepository) : ViewModel() {
     val history: StateFlow<List<Song>?> = repository.history
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -70,6 +85,65 @@ class HomeViewModel(repository: MusicRepository) : ViewModel() {
             Recommendations.Ready(seed, songs)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), Recommendations.Loading)
+
+    private val _trending = MutableStateFlow<TrendingState>(TrendingState.Loading)
+
+    /** Tangga lagu Top 50 Indonesia. Setiap lagu dicari di YouTube di latar belakang. */
+    val trending: StateFlow<TrendingState> = _trending
+
+    private var trendingJob: Job? = null
+
+    init {
+        loadTrending()
+    }
+
+    fun loadTrending(forceRefresh: Boolean = false) {
+        trendingJob?.cancel()
+        trendingJob = viewModelScope.launch {
+            _trending.value = TrendingState.Loading
+            val tracks = try {
+                repository.topSongsIndonesia(forceRefresh)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _trending.value = TrendingState.Failed("Tangga lagu tidak bisa dimuat. ${friendlyError(e)}")
+                return@launch
+            }
+            _trending.value = TrendingState.Ready(tracks.mapIndexed { i, t -> ChartEntry(rank = i + 1, track = t) })
+            // Cari dari peringkat teratas dulu, beberapa sekaligus.
+            val gate = Semaphore(MusicRepository.SEARCH_PARALLELISM)
+            tracks.indices.map { i -> launch { gate.withPermit { resolve(i + 1) } } }.joinAll()
+        }
+    }
+
+    /** Memastikan lagu di peringkat [rank] sudah dicari di YouTube. */
+    private suspend fun resolve(rank: Int): Song? {
+        val entry = (trending.value as? TrendingState.Ready)?.entries?.getOrNull(rank - 1) ?: return null
+        if (entry.searched) return entry.song
+        val song = repository.findOnYouTube(entry.track)
+        _trending.update { state ->
+            if (state !is TrendingState.Ready) return@update state
+            state.copy(
+                entries = state.entries.map { if (it.rank == rank) it.copy(song = song, searched = true) else it },
+            )
+        }
+        return song
+    }
+
+    /**
+     * Memutar tangga lagu mulai dari [rank]. Kalau lagu itu belum selesai dicari, dicari dulu.
+     * Antrean berisi semua lagu yang sudah ketemu, sesuai urutan peringkat.
+     */
+    fun playFrom(rank: Int, play: (songs: List<Song>, startIndex: Int) -> Unit) {
+        viewModelScope.launch {
+            val target = resolve(rank)
+            val ready = (trending.value as? TrendingState.Ready)?.entries ?: return@launch
+            val songs = ready.mapNotNull { it.song }.distinctBy { it.id }
+            if (songs.isEmpty()) return@launch
+            // Kalau lagu yang diketuk tidak ketemu (misalnya "Putar semua" dan #1 tidak ada), mulai dari yang pertama.
+            play(songs, target?.let { t -> songs.indexOfFirst { it.id == t.id } }?.coerceAtLeast(0) ?: 0)
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -81,35 +155,52 @@ fun HomeScreen(onOpenSearch: () -> Unit, contentPadding: PaddingValues) {
     val mostPlayed by vm.mostPlayed.collectAsState()
     val recommendations by vm.recommendations.collectAsState()
     val currentSong by player.currentSong.collectAsState()
+    val trending by vm.trending.collectAsState()
+    var trendingExpanded by rememberSaveable { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
             colors = com.nada.music.ui.glass.transparentTopBarColors(),
-            title = { Text("Spotiuy", fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.app_name), fontWeight = FontWeight.Bold) },
+            actions = { JarvisButton() },
         )
 
         val list = history ?: return@Column
-        if (list.isEmpty()) {
-            EmptyState(
-                icon = Icons.Rounded.Search,
-                title = "Selamat datang di Spotiuy",
-                message = "Cari lagu favoritmu dan mulai dengarkan. Riwayat dan rekomendasi akan muncul di sini.",
-                modifier = Modifier.padding(top = 48.dp),
-                action = { Button(onClick = onOpenSearch) { Text("Cari lagu") } },
-            )
-            return@Column
-        }
 
         LazyColumn(contentPadding = contentPadding) {
-            item { SectionTitle("Terakhir diputar") }
-            item {
-                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp)) {
-                    itemsIndexed(list.take(20), key = { _, s -> s.id }) { index, song ->
-                        SongCard(song) { player.playSongs(list.take(20), index) }
-                        Spacer(Modifier.width(12.dp))
+            if (list.isEmpty()) {
+                item {
+                    EmptyState(
+                        icon = Icons.Rounded.Search,
+                        title = "Selamat datang di Nautify",
+                        message = "Cari lagu favoritmu dan mulai dengarkan. Riwayat dan rekomendasi akan muncul di sini.",
+                        modifier = Modifier.padding(top = 24.dp),
+                        action = { Button(onClick = onOpenSearch) { Text("Cari lagu") } },
+                    )
+                }
+            }
+
+            if (list.isNotEmpty()) {
+                item { SectionTitle("Terakhir diputar") }
+                item {
+                    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp)) {
+                        itemsIndexed(list.take(20), key = { _, s -> s.id }) { index, song ->
+                            SongCard(song) { player.playSongs(list.take(20), index) }
+                            Spacer(Modifier.width(12.dp))
+                        }
                     }
                 }
             }
+
+            trendingSection(
+                state = trending,
+                expanded = trendingExpanded,
+                currentSongId = currentSong?.id,
+                onToggleExpanded = { trendingExpanded = !trendingExpanded },
+                onPlay = { rank -> vm.playFrom(rank) { songs, index -> player.playSongs(songs, index) } },
+                onPlayAll = { vm.playFrom(1) { songs, _ -> player.playSongs(songs, 0) } },
+                onRetry = { vm.loadTrending(forceRefresh = true) },
+            )
 
             if (mostPlayed.size >= 3) {
                 item {

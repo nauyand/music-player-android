@@ -35,3 +35,13 @@
 -dontwarn org.conscrypt.**
 -dontwarn org.bouncycastle.**
 -dontwarn org.openjsse.**
+
+## sherpa-onnx (Jarvis). Kode native (JNI) membaca field kelas config lewat nama, jadi jangan diubah.
+-keep class com.k2fsa.sherpa.onnx.** { *; }
+
+## commons-compress: modul opsional yang tidak dipakai (zstd, xz, brotli, dll.)
+-dontwarn org.apache.commons.compress.**
+-dontwarn com.github.luben.zstd.**
+-dontwarn org.brotli.dec.**
+-dontwarn org.tukaani.xz.**
+-dontwarn org.objectweb.asm.**

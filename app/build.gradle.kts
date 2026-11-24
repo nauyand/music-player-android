@@ -15,6 +15,11 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+
+        ndk {
+            // HP Android modern (arm64) + HP lama (armv7) + emulator. Membuang x86 32-bit memperkecil APK.
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
     }
 
     buildTypes {
@@ -99,6 +104,13 @@ dependencies {
 
     // Ekstraksi YouTube / YouTube Music (pencarian, URL stream, lagu terkait).
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.27.1")
+
+    // Jarvis: wake word "Jarvis" (keyword spotting) dan suara Kokoro, offline di HP.
+    // AAR resmi sherpa-onnx v1.12.15 (onnxruntime ditautkan statis), dari
+    // https://github.com/k2-fsa/sherpa-onnx/releases/tag/v1.12.15
+    implementation(files("libs/sherpa-onnx-static-link-onnxruntime-1.12.15.aar"))
+    // Mengekstrak model Kokoro (.tar.bz2) yang diunduh saat Jarvis pertama diaktifkan.
+    implementation("org.apache.commons:commons-compress:1.27.1")
 
     testImplementation("junit:junit:4.13.2")
 }
