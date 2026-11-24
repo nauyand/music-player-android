@@ -64,7 +64,7 @@ class LrcLib(private val client: OkHttpClient) {
 
     private fun get(url: String): String? {
         val request = Request.Builder().url(url)
-            .header("User-Agent", "Nada Music (open-source Android player)")
+            .header("User-Agent", "Nautify (open-source Android player)")
             .build()
         client.newCall(request).execute().use { response ->
             if (response.code == 404) return null

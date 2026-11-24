@@ -120,6 +120,22 @@ class PlayerConnection(context: Context) {
         }
     }
 
+    /** Volume pemutar ini saja (0–1), dipakai Jarvis untuk mengecilkan musik sementara mendengarkan. */
+    var playerVolume: Float
+        get() = controller?.volume ?: 1f
+        set(value) {
+            controller?.volume = value.coerceIn(0f, 1f)
+        }
+
+    fun pause() = controller?.pause() ?: Unit
+
+    fun play() {
+        val c = controller ?: return
+        if (c.playerError != null) c.prepare()
+        if (c.playbackState == Player.STATE_ENDED) c.seekToDefaultPosition()
+        c.play()
+    }
+
     fun next() = controller?.seekToNext() ?: Unit
     fun previous() = controller?.seekToPrevious() ?: Unit
     fun seekTo(ms: Long) = controller?.seekTo(ms) ?: Unit

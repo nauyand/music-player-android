@@ -6,12 +6,14 @@ import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.Image
 import org.schabi.newpipe.extractor.Page
 import org.schabi.newpipe.extractor.ServiceList
+import org.schabi.newpipe.extractor.playlist.PlaylistInfo
 import org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQueryHandlerFactory
 import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.DeliveryMethod
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
+import org.schabi.newpipe.extractor.stream.StreamType
 import java.util.concurrent.ConcurrentHashMap
 
 /** URL stream audio yang sudah siap diputar oleh ExoPlayer. */
@@ -72,6 +74,34 @@ object YouTubeMusic {
         runCatching { service.suggestionExtractor.suggestionList(query) }.getOrDefault(emptyList())
     }
 
+    /** Judul dan lagu-lagu sebuah playlist / mix YouTube. */
+    data class PlaylistContent(val name: String, val songs: List<Song>)
+
+    /**
+     * Mengambil isi playlist atau mix YouTube, halaman demi halaman, sampai [maxSongs] lagu.
+     * Mix YouTube tidak ada ujungnya, jadi batas ini juga yang menghentikannya.
+     */
+    suspend fun playlist(url: String, maxSongs: Int): PlaylistContent = withContext(Dispatchers.IO) {
+        val info = PlaylistInfo.getInfo(service, url)
+        val songs = LinkedHashMap<String, Song>()
+        fun addAll(items: List<*>) = items.forEach { item ->
+            val song = (item as? StreamInfoItem)?.toSong() ?: return@forEach
+            if (songs.size < maxSongs) songs.putIfAbsent(song.id, song)
+        }
+        addAll(info.relatedItems)
+        var page = info.nextPage
+        var emptyPages = 0
+        while (page != null && songs.size < maxSongs && emptyPages < 3) {
+            val before = songs.size
+            val more = PlaylistInfo.getMoreItems(service, url, page)
+            addAll(more.items)
+            // Mix kadang mengulang lagu yang sama terus; berhenti kalau tidak ada lagu baru.
+            emptyPages = if (songs.size == before) emptyPages + 1 else 0
+            page = more.nextPage
+        }
+        PlaylistContent(info.name.orEmpty(), songs.values.toList())
+    }
+
     /** Lagu terkait (dipakai untuk rekomendasi dan radio otomatis). */
     suspend fun related(videoId: String): List<Song> = withContext(Dispatchers.IO) {
         cache[videoId]?.takeIf { it.related.isNotEmpty() }?.let { return@withContext it.related }
@@ -104,7 +134,11 @@ object YouTubeMusic {
             headers = headersFor(url),
             expiresAtMs = expiryOf(url),
         )
-        val related = info.relatedItems.mapNotNull { (it as? StreamInfoItem)?.toSong() }
+        // Hanya lagu: podcast, siaran langsung, Shorts, dan video panjang dibuang dari radio & rekomendasi.
+        val related = info.relatedItems
+            .mapNotNull { it as? StreamInfoItem }
+            .filter { it.isLikelyMusic() }
+            .mapNotNull { it.toSong() }
             .filter { it.id != videoId }
         return CachedInfo(stream, related).also { cache[videoId] = it }
     }
@@ -155,6 +189,21 @@ object YouTubeMusic {
             durationSec = duration,
         )
     }
+
+    private fun StreamInfoItem.isLikelyMusic(): Boolean = MusicOnlyFilter.isLikelyMusic(
+        title = name.orEmpty(),
+        channel = uploaderName.orEmpty(),
+        durationSec = duration,
+        isLive = streamType in LIVE_TYPES,
+        isShort = isShortFormContent,
+    )
+
+    private val LIVE_TYPES = setOf(
+        StreamType.LIVE_STREAM,
+        StreamType.AUDIO_LIVE_STREAM,
+        StreamType.POST_LIVE_STREAM,
+        StreamType.POST_LIVE_AUDIO_STREAM,
+    )
 
     private fun List<Image>.bestUrl(): String? = maxByOrNull { it.height }?.url
 }
