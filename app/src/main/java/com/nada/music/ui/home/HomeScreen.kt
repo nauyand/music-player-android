@@ -46,6 +46,7 @@ import com.nada.music.ui.components.SectionTitle
 import com.nada.music.ui.components.SongRow
 import com.nada.music.ui.components.friendlyError
 import com.nada.music.ui.jarvis.JarvisButton
+import com.nada.music.ui.jarvis.JarvisHelpButton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -162,7 +163,10 @@ fun HomeScreen(onOpenSearch: () -> Unit, contentPadding: PaddingValues) {
         TopAppBar(
             colors = com.nada.music.ui.glass.transparentTopBarColors(),
             title = { Text(stringResource(R.string.app_name), fontWeight = FontWeight.Bold) },
-            actions = { JarvisButton() },
+            actions = {
+                JarvisHelpButton()
+                JarvisButton()
+            },
         )
 
         val list = history ?: return@Column
