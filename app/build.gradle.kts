@@ -22,6 +22,21 @@ android {
         }
     }
 
+    // Kunci tanda tangan tetap, supaya setiap APK baru bisa dipasang menimpa versi lama tanpa
+    // menghapus data. Di GitHub Actions kuncinya diambil dari Secrets (lihat .github/workflows/build.yml).
+    // Kalau tidak ada (mis. build di komputer sendiri), dipakai debug key.
+    val releaseKeystore = System.getenv("SIGNING_KEYSTORE_PATH")?.let { file(it) }?.takeIf { it.isFile }
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = releaseKeystore
+                storePassword = System.getenv("SIGNING_STORE_PASSWORD")
+                keyAlias = System.getenv("SIGNING_KEY_ALIAS")
+                keyPassword = System.getenv("SIGNING_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -30,9 +45,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            // Ditandatangani dengan debug key supaya APK release bisa langsung dipasang.
-            // Ganti dengan keystore sendiri sebelum mendistribusikan aplikasi.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (releaseKeystore != null) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 

@@ -6,6 +6,19 @@ import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.RadioButton
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import com.nada.music.jarvis.JarvisSensitivity
+import com.nada.music.jarvis.JarvisSettings
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,7 +28,6 @@ import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MicOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -39,12 +51,14 @@ import com.nada.music.jarvis.KokoroModel
  * Tombol mikrofon di beranda untuk menyalakan / mematikan Jarvis.
  * Saat pertama dinyalakan: minta izin mikrofon, lalu tawarkan unduhan suara Kokoro.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun JarvisButton() {
     val context = LocalContext.current
     val running by JarvisService.running.collectAsState()
     val model by KokoroModel.state.collectAsState()
     var showVoiceDialog by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { KokoroModel.refresh(context) }
 
@@ -69,15 +83,24 @@ fun JarvisButton() {
         }
     }
 
-    IconButton(
-        onClick = {
-            when {
-                running -> JarvisService.stop(context)
-                ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
-                    PackageManager.PERMISSION_GRANTED -> startJarvis()
-                else -> permissionLauncher.launch(permissions)
-            }
-        },
+    // Ketuk: nyalakan / matikan. Tekan lama: pengaturan Jarvis (kepekaan, suara).
+    Box(
+        Modifier
+            .size(48.dp)
+            .clip(CircleShape)
+            .combinedClickable(
+                onClick = {
+                    when {
+                        running -> JarvisService.stop(context)
+                        ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                            PackageManager.PERMISSION_GRANTED -> startJarvis()
+                        else -> permissionLauncher.launch(permissions)
+                    }
+                },
+                onLongClick = { showSettings = true },
+                onLongClickLabel = "Pengaturan Jarvis",
+            ),
+        contentAlignment = Alignment.Center,
     ) {
         Icon(
             if (running) Icons.Rounded.Mic else Icons.Rounded.MicOff,
@@ -89,6 +112,66 @@ fun JarvisButton() {
     if (showVoiceDialog) {
         KokoroDialog(model, onDismiss = { showVoiceDialog = false })
     }
+    if (showSettings) {
+        JarvisSettingsDialog(
+            model = model,
+            onOpenVoice = {
+                showSettings = false
+                showVoiceDialog = true
+            },
+            onDismiss = { showSettings = false },
+        )
+    }
+}
+
+@Composable
+private fun JarvisSettingsDialog(model: KokoroModel.State, onOpenVoice: () -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val sensitivity by JarvisSettings.sensitivity.collectAsState()
+    LaunchedEffect(Unit) { JarvisSettings.load(context) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Pengaturan Jarvis") },
+        text = {
+            Column {
+                Text("Kepekaan panggilan \"Jarvis\"", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "Kalau Jarvis sering tidak menyahut, pilih yang lebih peka. " +
+                        "Kalau sering terpanggil sendiri, pilih yang kurang peka.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                JarvisSensitivity.entries.forEach { option ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { JarvisSettings.setSensitivity(context, option) }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = option == sensitivity, onClick = { JarvisSettings.setSensitivity(context, option) })
+                        Text(option.label)
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Text("Suara Jarvis", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    when (model) {
+                        KokoroModel.State.Ready -> "Kokoro (bm_lewis) sudah terpasang."
+                        is KokoroModel.State.Downloading -> "Sedang diunduh… ${(model.progress * 100).toInt()}%"
+                        else -> "Belum diunduh, sementara memakai suara Android."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (model !is KokoroModel.State.Ready) {
+                    TextButton(onClick = onOpenVoice) { Text("Unduh suara Jarvis") }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Tutup") } },
+    )
 }
 
 @Composable

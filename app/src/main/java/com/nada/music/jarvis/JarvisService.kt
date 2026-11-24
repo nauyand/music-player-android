@@ -66,6 +66,7 @@ class JarvisService : Service() {
         listener = CommandListener(this)
         voice = JarvisVoice(this)
         detector = WakeWordDetector(this)
+        JarvisSettings.load(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -85,6 +86,7 @@ class JarvisService : Service() {
             // Siapkan "Yes, sir?" lebih dulu supaya jawabannya langsung terdengar.
             scope.launch { voice.preload(WAKE_REPLY) }
             watchCalls()
+            watchSensitivity()
         }
         return START_NOT_STICKY
     }
@@ -116,9 +118,24 @@ class JarvisService : Service() {
 
     // ---- Wake word & perintah ----
 
+    /** Kalau kepekaan diubah di aplikasi, detektor dimulai ulang dengan pengaturan baru. */
+    private fun watchSensitivity() = scope.launch {
+        var first = true
+        JarvisSettings.sensitivity.collect {
+            if (first) {
+                first = false
+                return@collect
+            }
+            if (!busy && !pausedForCall) {
+                detector.stop()
+                startDetector()
+            }
+        }
+    }
+
     private fun startDetector() {
         if (pausedForCall) return
-        detector.start {
+        detector.start(JarvisSettings.sensitivity.value) {
             // Dipanggil dari thread mikrofon; tangani di main thread.
             scope.launch { onWake() }
         }
