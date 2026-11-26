@@ -19,11 +19,15 @@ import com.nada.music.MainActivity
 import com.nada.music.NadaApp
 import com.nada.music.R
 import com.nada.music.playback.PlayerConnection
+import androidx.media3.common.Player
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -53,6 +57,10 @@ class JarvisService : Service() {
     private lateinit var audioManager: AudioManager
     private var busy = false
     private var started = false
+
+    /** Berapa kali berturut-turut Jarvis terpanggil tapi perintahnya tidak dimengerti. */
+    private var missStreak = 0
+    private var sleepTimer: Job? = null
 
     /** true selama HP sedang dipakai telepon / video call. */
     private var pausedForCall = false
@@ -148,11 +156,20 @@ class JarvisService : Service() {
         detector.stop()
         val oldVolume = player.playerVolume
         player.playerVolume = oldVolume * DUCK_FACTOR
+        var understood = false
         try {
             // Tidak melakukan apa-apa kalau sudah siap; berguna kalau model Kokoro baru selesai diunduh.
             voice.preload(WAKE_REPLY)
             voice.speak(WAKE_REPLY)
-            val heard = if (listener.isAvailable) listener.listenOnce() else emptyList()
+            // Saat merekam perintah musik dikecilkan lebih jauh, supaya tidak ikut terdengar.
+            player.playerVolume = oldVolume * LISTEN_DUCK_FACTOR
+            // Pengaman tambahan: apa pun yang terjadi pada pengenal suara, Jarvis tidak
+            // boleh mendengarkan lebih dari LISTEN_TIMEOUT_MS.
+            val heard = if (listener.isAvailable) {
+                withTimeoutOrNull(LISTEN_TIMEOUT_MS) { listener.listenOnce() }.orEmpty()
+            } else {
+                emptyList()
+            }
             Log.d(TAG, "Terdengar: $heard")
             player.playerVolume = oldVolume
             if (heard.isEmpty()) {
@@ -162,13 +179,22 @@ class JarvisService : Service() {
             // Pilih kemungkinan pertama yang berupa perintah yang dikenali.
             val command = heard.map(VoiceCommand::parse).firstOrNull { it !is VoiceCommand.Unknown }
                 ?: VoiceCommand.Unknown(heard.first())
+            understood = command !is VoiceCommand.Unknown
             execute(command)
         } catch (e: Exception) {
             Log.e(TAG, "Perintah gagal", e)
         } finally {
             player.playerVolume = oldVolume
             busy = false
-            delay(300)
+            // Di tempat bising "Jarvis" bisa terpanggil sendiri berulang-ulang. Kalau perintah
+            // tidak dimengerti, tunggu sebentar lebih lama sebelum mendengarkan lagi.
+            if (understood) {
+                missStreak = 0
+                delay(300)
+            } else {
+                missStreak++
+                delay(if (missStreak >= 2) MISS_COOLDOWN_LONG_MS else MISS_COOLDOWN_MS)
+            }
             if (_running.value) startDetector()
         }
     }
@@ -217,6 +243,83 @@ class JarvisService : Service() {
                 stopSelf()
             }
             is VoiceCommand.PlaySong -> playSong(command.query)
+            VoiceCommand.Cancel -> say("Very well, sir.")
+            VoiceCommand.WhatIsPlaying -> {
+                val song = player.currentSong.value
+                if (song == null) say("Nothing is playing right now, sir.")
+                else say("This is ${song.title}, by ${song.artist}, sir.")
+            }
+            VoiceCommand.Restart -> {
+                say("From the top, sir.")
+                player.restart()
+            }
+            VoiceCommand.ShuffleOn -> {
+                player.setShuffle(true)
+                say("Shuffle is on, sir.")
+            }
+            VoiceCommand.ShuffleOff -> {
+                player.setShuffle(false)
+                say("Shuffle is off, sir.")
+            }
+            VoiceCommand.RepeatOne -> {
+                player.setRepeat(Player.REPEAT_MODE_ONE)
+                say("Repeating this song, sir.")
+            }
+            VoiceCommand.RepeatAll -> {
+                player.setRepeat(Player.REPEAT_MODE_ALL)
+                say("Repeating the whole queue, sir.")
+            }
+            VoiceCommand.RepeatOff -> {
+                player.setRepeat(Player.REPEAT_MODE_OFF)
+                say("Repeat is off, sir.")
+            }
+            VoiceCommand.Like -> {
+                val song = player.currentSong.value
+                if (song == null) {
+                    say("Nothing is playing right now, sir.")
+                } else {
+                    (application as NadaApp).repository.setLiked(song, true)
+                    say("Added to your favourites, sir.")
+                }
+            }
+            VoiceCommand.PlayLiked -> {
+                val liked = (application as NadaApp).repository.likedSongs.first()
+                if (liked.isEmpty()) {
+                    say("You have no favourite songs yet, sir.")
+                } else {
+                    say("Playing your favourites, sir.")
+                    player.playSongs(liked, shuffle = true)
+                }
+            }
+            VoiceCommand.Mute -> {
+                audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_MUTE, AudioManager.FLAG_SHOW_UI)
+            }
+            VoiceCommand.TellTime -> {
+                val now = java.time.LocalTime.now()
+                say("It's ${now.format(java.time.format.DateTimeFormatter.ofPattern("h:mm a", java.util.Locale.US))}, sir.")
+            }
+            is VoiceCommand.Seek -> {
+                player.seekBy(command.seconds * 1000L)
+                say(if (command.seconds >= 0) "Forward ${command.seconds} seconds, sir." else "Back ${-command.seconds} seconds, sir.")
+            }
+            is VoiceCommand.SleepTimer -> {
+                sleepTimer?.cancel()
+                sleepTimer = scope.launch {
+                    delay(command.minutes * 60_000L)
+                    player.pause()
+                    sleepTimer = null
+                }
+                say("Music will stop in ${command.minutes} minutes, sir.")
+            }
+            VoiceCommand.CancelSleepTimer -> {
+                if (sleepTimer == null) {
+                    say("There is no timer running, sir.")
+                } else {
+                    sleepTimer?.cancel()
+                    sleepTimer = null
+                    say("Timer cancelled, sir.")
+                }
+            }
             is VoiceCommand.Unknown -> say("I'm sorry sir, I don't know that command yet.")
         }
     }
@@ -298,6 +401,16 @@ class JarvisService : Service() {
         private const val ACTION_STOP = "com.nada.music.jarvis.STOP"
         private const val DUCK_FACTOR = 0.15f
         private const val VOLUME_STEPS = 2
+
+        /** Volume musik saat perintah sedang direkam. */
+        private const val LISTEN_DUCK_FACTOR = 0.05f
+
+        /** Batas paling lama Jarvis mendengarkan satu perintah (pengaman kalau pengenal suara macet). */
+        private const val LISTEN_TIMEOUT_MS = 11_000L
+
+        /** Jeda sebelum mendengarkan "Jarvis" lagi setelah perintah tidak dimengerti. */
+        private const val MISS_COOLDOWN_MS = 1_500L
+        private const val MISS_COOLDOWN_LONG_MS = 5_000L
 
         /** Jawaban saat dipanggil "Jarvis". Disiapkan sekali lalu diputar dari memori. */
         const val WAKE_REPLY = "Yes, sir?"

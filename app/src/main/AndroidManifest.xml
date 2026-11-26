@@ -4,6 +4,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Remote PC: mencari alamat IP Wi-Fi HP dan menjaga Wi-Fi tetap aktif saat layar mati. -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -49,6 +51,12 @@
             android:name=".jarvis.JarvisService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <!-- Remote PC: server web kecil untuk mengatur musik dari browser di jaringan yang sama. -->
+        <service
+            android:name=".remote.RemoteService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
         <service
             android:name=".playback.PlaybackService"

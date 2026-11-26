@@ -45,3 +45,7 @@
 -dontwarn org.brotli.dec.**
 -dontwarn org.tukaani.xz.**
 -dontwarn org.objectweb.asm.**
+
+## NanoHTTPD (Remote PC)
+-keep class fi.iki.elonen.** { *; }
+-dontwarn fi.iki.elonen.**
