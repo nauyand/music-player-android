@@ -18,6 +18,43 @@ sealed interface VoiceCommand {
     /** Cari lagu lalu putar, misalnya "putar Sial Mahalini". */
     data class PlaySong(val query: String) : VoiceCommand
 
+    /** Batalkan, misalnya "nggak jadi" atau "cancel". Jarvis diam saja dan kembali menunggu. */
+    data object Cancel : VoiceCommand
+
+    /** "Lagu apa ini?": Jarvis menyebut judul dan penyanyi lagu yang sedang diputar. */
+    data object WhatIsPlaying : VoiceCommand
+
+    /** Putar ulang lagu ini dari awal. */
+    data object Restart : VoiceCommand
+
+    data object ShuffleOn : VoiceCommand
+    data object ShuffleOff : VoiceCommand
+
+    /** Ulangi lagu ini terus. */
+    data object RepeatOne : VoiceCommand
+
+    /** Ulangi seluruh antrean. */
+    data object RepeatAll : VoiceCommand
+    data object RepeatOff : VoiceCommand
+
+    /** Tandai lagu yang sedang diputar sebagai disukai. */
+    data object Like : VoiceCommand
+
+    /** Putar semua lagu yang disukai (acak). */
+    data object PlayLiked : VoiceCommand
+
+    data object Mute : VoiceCommand
+
+    /** "Jam berapa?" */
+    data object TellTime : VoiceCommand
+
+    /** Maju / mundur beberapa detik; [seconds] negatif berarti mundur. */
+    data class Seek(val seconds: Int) : VoiceCommand
+
+    /** Jeda musik otomatis setelah [minutes] menit. */
+    data class SleepTimer(val minutes: Int) : VoiceCommand
+    data object CancelSleepTimer : VoiceCommand
+
     /** Ucapan tidak dikenali. */
     data class Unknown(val text: String) : VoiceCommand
 
@@ -73,6 +110,64 @@ sealed interface VoiceCommand {
             "shut down", "shutdown", "jarvis off", "nonaktif", "selamat tidur", "bye", "dadah",
         )
 
+        private val CANCEL = setOf(
+            "batal", "batalkan", "gak jadi", "nggak jadi", "ga jadi", "enggak jadi", "tidak jadi", "cancel",
+            "never mind", "nevermind", "nothing", "bukan apa-apa", "gak ada", "nggak ada", "tidak ada", "salah",
+            "salah panggil",
+        )
+        private val WHAT_IS_PLAYING = setOf(
+            "lagu apa ini", "ini lagu apa", "lagu apa", "judul lagu", "judulnya apa", "apa judulnya",
+            "siapa penyanyinya", "ini lagu siapa", "lagu siapa ini", "lagu apa yang diputar", "what song is this",
+            "what's playing", "what is playing", "whats playing", "what is this song", "who sings this",
+        )
+        private val RESTART = setOf(
+            "ulang dari awal", "dari awal", "mulai dari awal", "ulangi dari awal", "putar dari awal", "restart",
+            "start over", "from the beginning",
+        )
+        private val SHUFFLE_ON = setOf(
+            "acak", "acak lagu", "acak lagunya", "shuffle", "shuffle on", "putar acak", "mode acak", "nyalakan acak",
+        )
+        private val SHUFFLE_OFF = setOf(
+            "jangan acak", "matikan acak", "acak mati", "shuffle off", "stop shuffle", "urut", "putar berurutan",
+        )
+        private val REPEAT_ONE = setOf(
+            "ulangi lagu ini", "ulangi lagu", "ulang lagu ini", "repeat", "repeat one", "repeat this song",
+            "putar terus lagu ini", "lagu ini terus", "loop", "ulangi terus",
+        )
+        private val REPEAT_ALL = setOf("ulangi semua", "repeat all", "ulangi antrean", "ulangi playlist")
+        private val REPEAT_OFF = setOf(
+            "jangan diulang", "matikan ulang", "matikan repeat", "repeat off", "stop repeat", "jangan ulangi",
+        )
+        private val LIKE = setOf(
+            "suka", "suka lagu ini", "aku suka lagu ini", "saya suka lagu ini", "like", "like lagu ini",
+            "like this song", "i like this song", "simpan lagu ini", "tambahkan ke favorit", "favoritkan",
+            "masukkan ke favorit", "love this song",
+        )
+        private val PLAY_LIKED = setOf(
+            "putar lagu favorit", "putar favorit", "lagu favorit", "putar lagu yang disukai", "lagu yang disukai",
+            "putar yang disukai", "mainkan lagu favorit", "play my favorites", "play favorites", "play liked songs",
+            "putar lagu kesukaan", "lagu kesukaan",
+        )
+        private val MUTE = setOf("mute", "bisukan", "senyap", "tanpa suara", "matikan suara")
+        private val TELL_TIME = setOf(
+            "jam berapa", "jam berapa sekarang", "sekarang jam berapa", "what time is it", "what's the time", "time",
+        )
+        private val CANCEL_TIMER = setOf(
+            "batalkan timer", "matikan timer", "hapus timer", "cancel timer", "batalkan sleep timer", "stop timer",
+        )
+
+        /** "maju 30 detik", "mundur 10 detik", "skip 15 seconds", "rewind 10 seconds". */
+        private val SEEK = Regex(
+            "^(maju|majukan|percepat|forward|skip|mundur|mundurkan|rewind|back)\\s+(\\d{1,3})\\s*(detik|seconds?|secs?|s)$",
+        )
+
+        /** "matikan musik dalam 30 menit", "sleep timer 15 menit", "timer 20". */
+        private val SLEEP_TIMER = Regex(
+            "^(?:(?:matikan|stop|berhenti|hentikan|pause|jeda)(?:\\s+(?:musik|lagu|musiknya|lagunya))?" +
+                "\\s+(?:dalam|setelah|sesudah|in|after)|(?:sleep\\s+)?timer|tidur\\s+dalam)" +
+                "\\s+(\\d{1,3})\\s*(?:menit|minutes?|mins?|m)?$",
+        )
+
         fun parse(spoken: String): VoiceCommand {
             if (SLEEP_WITH_NAME.containsMatchIn(spoken.lowercase())) return Sleep
             val text = normalize(spoken)
@@ -86,6 +181,30 @@ sealed interface VoiceCommand {
                 in PREVIOUS -> return Previous
                 in VOLUME_UP -> return VolumeUp
                 in VOLUME_DOWN -> return VolumeDown
+                in CANCEL -> return Cancel
+                in WHAT_IS_PLAYING -> return WhatIsPlaying
+                in RESTART -> return Restart
+                in SHUFFLE_ON -> return ShuffleOn
+                in SHUFFLE_OFF -> return ShuffleOff
+                in REPEAT_ONE -> return RepeatOne
+                in REPEAT_ALL -> return RepeatAll
+                in REPEAT_OFF -> return RepeatOff
+                in LIKE -> return Like
+                in PLAY_LIKED -> return PlayLiked
+                in MUTE -> return Mute
+                in TELL_TIME -> return TellTime
+                in CANCEL_TIMER -> return CancelSleepTimer
+            }
+
+            SEEK.find(text)?.let { m ->
+                val n = m.groupValues[2].toInt()
+                val back = m.groupValues[1] in setOf("mundur", "mundurkan", "rewind", "back")
+                return Seek(if (back) -n else n)
+            }
+
+            SLEEP_TIMER.find(text)?.let { m ->
+                val n = m.groupValues[1].toInt()
+                if (n > 0) return SleepTimer(n.coerceAtMost(240))
             }
 
             SET_VOLUME.find(text)?.let { m ->
@@ -104,6 +223,7 @@ sealed interface VoiceCommand {
         internal fun normalize(spoken: String): String {
             var t = spoken.lowercase()
                 .replace(Regex("[.!?\"“”]"), " ")
+                .replace('’', '\'')
                 .replace(Regex("\\s+"), " ")
                 .trim()
             t = t.replace(FILLER_START, "").replace(FILLER_END, "").trim(' ', ',')

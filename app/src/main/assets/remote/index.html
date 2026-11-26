@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nautify Remote</title>
+<style>
+  :root {
+    --bg: #0e1014; --panel: #171a21; --panel2: #1f232c; --line: #2a2f3a;
+    --text: #eef0f4; --muted: #9aa2b1; --accent: #4f8cff; --danger: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  input { font: inherit; color: inherit; }
+  .app { display: grid; grid-template-columns: 380px 1fr; height: 100vh; }
+  @media (max-width: 820px) { .app { grid-template-columns: 1fr; height: auto; } }
+
+  /* Pemutar */
+  .player { padding: 28px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 18px; }
+  .art { width: 100%; aspect-ratio: 1; border-radius: 14px; background: var(--panel2) center/cover no-repeat;
+    display: grid; place-items: center; color: var(--muted); font-size: 48px; }
+  .title { font-size: 20px; font-weight: 650; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .artist { color: var(--muted); margin: 2px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .time { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .controls { display: flex; align-items: center; justify-content: center; gap: 14px; }
+  .btn { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; }
+  .btn:hover { background: var(--panel2); }
+  .btn.big { width: 64px; height: 64px; background: var(--text); color: var(--bg); }
+  .btn.big:hover { background: #fff; }
+  .btn.on { color: var(--accent); }
+  .btn svg { width: 22px; height: 22px; fill: currentColor; }
+  .btn.big svg { width: 30px; height: 30px; }
+  .vol { display: flex; align-items: center; gap: 10px; color: var(--muted); }
+  .vol svg { width: 20px; height: 20px; fill: currentColor; flex: none; }
+  .vol span { width: 38px; text-align: right; font-variant-numeric: tabular-nums; }
+  .status { color: var(--muted); font-size: 12px; text-align: center; min-height: 18px; }
+  .status.err { color: var(--danger); }
+
+  /* Panel kanan */
+  .side { display: flex; flex-direction: column; min-height: 0; }
+  .tabs { display: flex; gap: 4px; padding: 16px 20px 0; border-bottom: 1px solid var(--line); }
+  .tab { padding: 10px 14px; border-bottom: 2px solid transparent; color: var(--muted); }
+  .tab.active { color: var(--text); border-color: var(--accent); }
+  .search { padding: 16px 20px 0; display: none; }
+  .search.show { display: block; }
+  .search input { width: 100%; padding: 11px 14px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--panel); outline: none; }
+  .search input:focus { border-color: var(--accent); }
+  .list { flex: 1; overflow-y: auto; padding: 10px 12px 24px; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 10px; cursor: pointer; }
+  .row:hover { background: var(--panel); }
+  .row.current { background: var(--panel2); }
+  .row.current .rt { color: var(--accent); }
+  .thumb { width: 44px; height: 44px; border-radius: 6px; background: var(--panel2) center/cover; flex: none; }
+  .rinfo { flex: 1; min-width: 0; }
+  .rt, .ra { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ra { color: var(--muted); font-size: 12px; }
+  .dur { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .act { opacity: 0; display: flex; gap: 2px; }
+  .row:hover .act { opacity: 1; }
+  .act button { padding: 6px 8px; border-radius: 6px; color: var(--muted); font-size: 12px; }
+  .act button:hover { background: var(--line); color: var(--text); }
+  .empty { color: var(--muted); text-align: center; padding: 40px 20px; }
+  .section { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; padding: 14px 8px 6px; }
+
+  /* PIN */
+  .pin { position: fixed; inset: 0; background: rgba(0,0,0,.7); display: none; place-items: center; z-index: 9; }
+  .pin.show { display: grid; }
+  .pin form { background: var(--panel); padding: 28px; border-radius: 16px; width: 320px; text-align: center; }
+  .pin h2 { margin: 0 0 6px; font-size: 18px; }
+  .pin p { color: var(--muted); margin: 0 0 16px; }
+  .pin input { width: 100%; text-align: center; font-size: 28px; letter-spacing: .4em; padding: 10px;
+    border-radius: 10px; border: 1px solid var(--line); background: var(--bg); outline: none; }
+  .pin button { margin-top: 14px; width: 100%; padding: 11px; border-radius: 10px; background: var(--accent); color: #fff; font-weight: 600; }
+  .pin .err { color: var(--danger); min-height: 20px; margin-top: 8px; font-size: 13px; }
+  .keys { color: var(--muted); font-size: 11px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="player">
+    <div class="art" id="art">♪</div>
+    <div>
+      <p class="title" id="title">Belum ada lagu</p>
+      <p class="artist" id="artist">Cari lagu di sebelah kanan</p>
+    </div>
+    <div>
+      <input type="range" id="seek" min="0" max="1000" value="0">
+      <div class="time"><span id="pos">0:00</span><span id="dur">0:00</span></div>
+    </div>
+    <div class="controls">
+      <button class="btn" id="shuffle" title="Acak"><svg viewBox="0 0 24 24"><path d="M10.6 9.2 5.4 4 4 5.4l5.2 5.2 1.4-1.4ZM14.5 4l2 2L4 18.6 5.4 20 18 7.5l2 2V4h-5.5Zm.3 9.4-1.4 1.4 3.1 3.2-2 2H20v-5.5l-2 2-3.2-3.1Z"/></svg></button>
+      <button class="btn" id="prev" title="Sebelumnya"><svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg></button>
+      <button class="btn big" id="toggle" title="Putar / jeda (spasi)"><svg viewBox="0 0 24 24" id="toggleIcon"><path d="M8 5v14l11-7z"/></svg></button>
+      <button class="btn" id="next" title="Berikutnya"><svg viewBox="0 0 24 24"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg></button>
+      <button class="btn" id="repeat" title="Ulangi"><svg viewBox="0 0 24 24" id="repeatIcon"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7Zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4Z"/></svg></button>
+    </div>
+    <div class="vol">
+      <svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3Zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4Z"/></svg>
+      <input type="range" id="vol" min="0" max="100" value="50">
+      <span id="volText">50%</span>
+    </div>
+    <div class="status" id="status"></div>
+    <div class="keys">Spasi: putar/jeda · ← →: mundur/maju 10 dtk · ↑ ↓: volume · Ctrl+K: cari</div>
+  </section>
+
+  <section class="side">
+    <nav class="tabs">
+      <button class="tab active" data-tab="queue">Antrean</button>
+      <button class="tab" data-tab="search">Cari</button>
+      <button class="tab" data-tab="liked">Favorit</button>
+      <button class="tab" data-tab="history">Riwayat</button>
+      <button class="tab" data-tab="playlists">Playlist</button>
+    </nav>
+    <div class="search" id="searchBox"><input id="q" placeholder="Cari lagu atau penyanyi, lalu Enter" autocomplete="off"></div>
+    <div class="list" id="list"></div>
+  </section>
+</div>
+
+<div class="pin" id="pinBox">
+  <form id="pinForm">
+    <h2>Masukkan PIN</h2>
+    <p>PIN tampil di aplikasi Nautify (tombol Remote PC) dan di notifikasi HP.</p>
+    <input id="pinInput" inputmode="numeric" maxlength="4" autocomplete="off">
+    <button type="submit">Sambungkan</button>
+    <div class="err" id="pinErr"></div>
+  </form>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let pin = localStorage.getItem("nautify-pin") || "";
+let state = null;
+let tab = "queue";
+let lastSearch = { q: "", songs: [] };
+let library = null;
+let openPlaylist = null;
+let seeking = false, volDragging = false;
+
+async function api(path, body) {
+  const opts = { headers: { "X-Pin": pin } };
+  if (body !== undefined) {
+    opts.method = "POST";
+    opts.headers["Content-Type"] = "application/json";
+    opts.body = JSON.stringify(body);
+  }
+  const res = await fetch(path, opts);
+  if (res.status === 401) { askPin("PIN salah atau belum diisi."); throw new Error("pin"); }
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+function askPin(msg) {
+  $("pinBox").classList.add("show");
+  $("pinErr").textContent = pin ? msg : "";
+  $("pinInput").focus();
+}
+$("pinForm").onsubmit = (e) => {
+  e.preventDefault();
+  pin = $("pinInput").value.trim();
+  localStorage.setItem("nautify-pin", pin);
+  $("pinBox").classList.remove("show");
+  refresh();
+};
+
+const fmt = (ms) => {
+  if (!(ms > 0)) return "0:00";
+  const s = Math.floor(ms / 1000), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), r = s % 60;
+  return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(r).padStart(2, "0");
+};
+const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+const PLAY = '<path d="M8 5v14l11-7z"/>';
+const PAUSE = '<path d="M6 5h4v14H6zm8 0h4v14h-4z"/>';
+const REPEAT = '<path d="M7 7h10v3l4-4-4-4v3H5v6h2V7Zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4Z"/>';
+const REPEAT_ONE = REPEAT + '<path d="M13 15V9h-1l-2 1v1h1.5v4H13Z"/>';
+
+function render() {
+  if (!state) return;
+  const s = state.song;
+  $("title").textContent = s ? s.title : "Belum ada lagu";
+  $("artist").textContent = s ? s.artist : "Cari lagu di sebelah kanan";
+  document.title = s ? `${s.title} · Nautify Remote` : "Nautify Remote";
+  const art = $("art");
+  if (s && s.thumb) { art.style.backgroundImage = `url("${s.thumb}")`; art.textContent = ""; }
+  else { art.style.backgroundImage = ""; art.textContent = "♪"; }
+  $("toggleIcon").innerHTML = state.playing ? PAUSE : PLAY;
+  $("shuffle").classList.toggle("on", state.shuffle);
+  $("repeat").classList.toggle("on", state.repeat !== "off");
+  $("repeatIcon").innerHTML = state.repeat === "one" ? REPEAT_ONE : REPEAT;
+  if (!seeking) {
+    $("seek").value = state.duration ? Math.round(state.position / state.duration * 1000) : 0;
+    $("pos").textContent = fmt(state.position);
+  }
+  $("dur").textContent = fmt(state.duration);
+  if (!volDragging) { $("vol").value = state.volume; $("volText").textContent = state.volume + "%"; }
+  const st = $("status");
+  st.classList.toggle("err", !!state.error);
+  st.textContent = state.error || (state.buffering ? "Memuat…" : (state.connected ? "" : "Menyambung ke pemutar…"));
+  const key = state.index + "|" + state.queue.map((x) => x.id).join(",");
+  if (tab === "queue" && key !== queueKey) { queueKey = key; renderList(); }
+}
+let queueKey = "";
+
+function songRow(song, i, opts = {}) {
+  const thumb = song.thumb ? `style="background-image:url('${esc(song.thumb)}')"` : "";
+  const dur = song.duration > 0 ? fmt(song.duration * 1000) : "";
+  const actions = opts.queue
+    ? `<button data-a="remove">Hapus</button>`
+    : `<button data-a="next">Putar berikutnya</button><button data-a="add">+ Antrean</button>`;
+  return `<div class="row ${opts.current ? "current" : ""}" data-i="${i}">
+    <div class="thumb" ${thumb}></div>
+    <div class="rinfo"><div class="rt">${esc(song.title)}</div><div class="ra">${esc(song.artist)}</div></div>
+    <div class="act">${actions}</div><div class="dur">${dur}</div></div>`;
+}
+
+function bindRows(songs, onPlay, opts = {}) {
+  $("list").querySelectorAll(".row").forEach((row) => {
+    const i = +row.dataset.i;
+    row.onclick = (e) => {
+      const a = e.target.dataset && e.target.dataset.a;
+      if (a === "remove") return send({ action: "remove", index: i });
+      if (a === "next") return api("/api/enqueue", { song: songs[i], next: true }).then(set).then(() => flash("Diputar berikutnya"));
+      if (a === "add") return api("/api/enqueue", { song: songs[i], next: false }).then(set).then(() => flash("Ditambahkan ke antrean"));
+      onPlay(i);
+    };
+  });
+}
+
+function showSongs(songs, emptyText, header = "") {
+  $("list").innerHTML = header + (songs.length ? songs.map((s, i) => songRow(s, i)).join("") : `<div class="empty">${emptyText}</div>`);
+  bindRows(songs, (i) => api("/api/play", { songs, index: i }).then(set));
+}
+
+function renderList() {
+  const list = $("list");
+  if (tab === "queue") {
+    const q = state ? state.queue : [];
+    list.innerHTML = q.length ? q.map((s, i) => songRow(s, i, { queue: true, current: i === state.index })).join("")
+      : `<div class="empty">Antrean kosong. Cari lagu lalu klik untuk memutar.</div>`;
+    bindRows(q, (i) => send({ action: "skip", index: i }), { queue: true });
+  } else if (tab === "search") {
+    showSongs(lastSearch.songs, lastSearch.q ? "Tidak ada hasil." : "Ketik judul lagu atau nama penyanyi.");
+  } else if (!library) {
+    list.innerHTML = `<div class="empty">Memuat…</div>`;
+  } else if (tab === "liked") {
+    showSongs(library.liked, "Belum ada lagu favorit.");
+  } else if (tab === "history") {
+    showSongs(library.history, "Belum ada riwayat.");
+  } else if (tab === "playlists") {
+    if (openPlaylist) {
+      const header = `<div class="section"><button id="back">← Playlist</button> · ${esc(openPlaylist.name)}</div>`;
+      showSongs(openPlaylist.songs, "Playlist kosong.", header);
+      $("back").onclick = () => { openPlaylist = null; renderList(); };
+      return;
+    }
+    list.innerHTML = library.playlists.length ? library.playlists.map((p, i) => `<div class="row" data-i="${i}">
+      <div class="thumb" ${p.thumb ? `style="background-image:url('${esc(p.thumb)}')"` : ""}></div>
+      <div class="rinfo"><div class="rt">${esc(p.name)}</div><div class="ra">${p.count} lagu</div></div></div>`).join("")
+      : `<div class="empty">Belum ada playlist.</div>`;
+    list.querySelectorAll(".row").forEach((row) => row.onclick = async () => {
+      const p = library.playlists[+row.dataset.i];
+      const data = await api("/api/playlist?id=" + p.id);
+      openPlaylist = { name: p.name, songs: data.songs };
+      renderList();
+    });
+  }
+}
+
+function set(s) { state = s; render(); }
+function flash(text) { const st = $("status"); st.classList.remove("err"); st.textContent = text; }
+const send = (body) => api("/api/cmd", body).then(set).catch((e) => e.message !== "pin" && flash(e.message));
+
+async function refresh() {
+  try { set(await api("/api/state")); }
+  catch (e) { if (e.message !== "pin") { $("status").classList.add("err"); $("status").textContent = "Tidak tersambung ke HP. Pastikan aplikasi & Remote PC masih aktif."; } }
+}
+
+document.querySelectorAll(".tab").forEach((b) => b.onclick = async () => {
+  document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("active", x === b));
+  tab = b.dataset.tab;
+  queueKey = "";
+  $("searchBox").classList.toggle("show", tab === "search");
+  if (tab === "search") $("q").focus();
+  if (["liked", "history", "playlists"].includes(tab)) {
+    renderList();
+    try { library = await api("/api/library"); } catch (e) {}
+  }
+  renderList();
+});
+
+$("q").onkeydown = async (e) => {
+  if (e.key !== "Enter") return;
+  const q = $("q").value.trim();
+  if (!q) return;
+  $("list").innerHTML = `<div class="empty">Mencari “${esc(q)}”…</div>`;
+  try { lastSearch = { q, songs: (await api("/api/search?q=" + encodeURIComponent(q))).songs }; }
+  catch (err) { lastSearch = { q, songs: [] }; flash(err.message); }
+  renderList();
+};
+
+$("toggle").onclick = () => send({ action: "toggle" });
+$("next").onclick = () => send({ action: "next" });
+$("prev").onclick = () => send({ action: "prev" });
+$("shuffle").onclick = () => send({ action: "shuffle" });
+$("repeat").onclick = () => send({ action: "repeat" });
+
+$("seek").oninput = () => { seeking = true; if (state) $("pos").textContent = fmt($("seek").value / 1000 * state.duration); };
+$("seek").onchange = () => { seeking = false; if (state && state.duration) send({ action: "seek", ms: Math.round($("seek").value / 1000 * state.duration) }); };
+$("vol").oninput = () => { volDragging = true; $("volText").textContent = $("vol").value + "%"; };
+$("vol").onchange = () => { volDragging = false; send({ action: "volume", value: +$("vol").value }); };
+
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "k") { e.preventDefault(); document.querySelector('[data-tab="search"]').click(); return; }
+  if (e.target.tagName === "INPUT" && e.target.type !== "range") return;
+  if (e.code === "Space") { e.preventDefault(); send({ action: "toggle" }); }
+  else if (e.key === "ArrowRight") send({ action: "seekBy", ms: 10000 });
+  else if (e.key === "ArrowLeft") send({ action: "seekBy", ms: -10000 });
+  else if (e.key === "ArrowUp") { e.preventDefault(); send({ action: "volumeUp" }); }
+  else if (e.key === "ArrowDown") { e.preventDefault(); send({ action: "volumeDown" }); }
+});
+
+if (!pin) askPin(); else refresh();
+setInterval(() => { if (pin && !document.hidden) refresh(); }, 1000);
+</script>
+</body>
+</html>

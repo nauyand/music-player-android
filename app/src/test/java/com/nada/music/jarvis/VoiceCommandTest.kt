@@ -55,6 +55,35 @@ class VoiceCommandTest {
     }
 
     @Test
+    fun newCommands() {
+        assertEquals(VoiceCommand.Cancel, parse("nggak jadi"))
+        assertEquals(VoiceCommand.Cancel, parse("Never mind."))
+        assertEquals(VoiceCommand.WhatIsPlaying, parse("ini lagu apa?"))
+        assertEquals(VoiceCommand.WhatIsPlaying, parse("what's playing"))
+        assertEquals(VoiceCommand.Restart, parse("ulang dari awal"))
+        assertEquals(VoiceCommand.ShuffleOn, parse("putar acak"))
+        assertEquals(VoiceCommand.ShuffleOff, parse("matikan acak"))
+        assertEquals(VoiceCommand.RepeatOne, parse("ulangi lagu ini"))
+        assertEquals(VoiceCommand.RepeatAll, parse("repeat all"))
+        assertEquals(VoiceCommand.RepeatOff, parse("matikan repeat"))
+        assertEquals(VoiceCommand.Like, parse("aku suka lagu ini"))
+        assertEquals(VoiceCommand.PlayLiked, parse("putar lagu favorit"))
+        assertEquals(VoiceCommand.Mute, parse("mute"))
+        assertEquals(VoiceCommand.TellTime, parse("jam berapa sekarang"))
+        assertEquals(VoiceCommand.Seek(30), parse("maju 30 detik"))
+        assertEquals(VoiceCommand.Seek(-10), parse("mundur 10 detik"))
+        assertEquals(VoiceCommand.Seek(15), parse("skip 15 seconds"))
+        assertEquals(VoiceCommand.SleepTimer(30), parse("matikan musik dalam 30 menit"))
+        assertEquals(VoiceCommand.SleepTimer(15), parse("sleep timer 15 menit"))
+        assertEquals(VoiceCommand.SleepTimer(20), parse("timer 20"))
+        assertEquals(VoiceCommand.CancelSleepTimer, parse("batalkan timer"))
+        // Perintah lama tetap sama.
+        assertEquals(VoiceCommand.Previous, parse("mundur"))
+        assertEquals(VoiceCommand.Next, parse("skip"))
+        assertEquals(VoiceCommand.PlaySong("acak adul"), parse("putar acak adul"))
+    }
+
+    @Test
     fun unknownSpeech() {
         assertTrue(parse("apa kabar") is VoiceCommand.Unknown)
         assertTrue(parse("") is VoiceCommand.Unknown)

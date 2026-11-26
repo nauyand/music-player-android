@@ -129,5 +129,8 @@ dependencies {
     // Mengekstrak model Kokoro (.tar.bz2) yang diunduh saat Jarvis pertama diaktifkan.
     implementation("org.apache.commons:commons-compress:1.27.1")
 
+    // Remote PC: server HTTP kecil (tanpa dependensi lain) untuk mengatur musik dari browser.
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
+
     testImplementation("junit:junit:4.13.2")
 }

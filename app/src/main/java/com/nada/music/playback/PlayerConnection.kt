@@ -155,6 +155,33 @@ class PlayerConnection(context: Context) {
         c.shuffleModeEnabled = !c.shuffleModeEnabled
     }
 
+    fun setShuffle(enabled: Boolean) {
+        controller?.shuffleModeEnabled = enabled
+    }
+
+    /** [mode] salah satu dari Player.REPEAT_MODE_OFF / _ONE / _ALL. */
+    fun setRepeat(mode: Int) {
+        controller?.repeatMode = mode
+    }
+
+    /** Maju (positif) atau mundur (negatif) beberapa milidetik di lagu ini. */
+    fun seekBy(deltaMs: Long) {
+        val c = controller ?: return
+        val target = (c.currentPosition + deltaMs).coerceAtLeast(0L)
+        val dur = c.duration
+        c.seekTo(if (dur > 0) target.coerceAtMost(dur - 500) else target)
+    }
+
+    /** Putar ulang lagu ini dari awal. */
+    fun restart() {
+        val c = controller ?: return
+        c.seekTo(0L)
+        c.play()
+    }
+
+    /** true kalau sudah tersambung ke [PlaybackService]. */
+    val isConnected: Boolean get() = controller != null
+
     fun cycleRepeat() {
         val c = controller ?: return
         c.repeatMode = when (c.repeatMode) {
