@@ -8,6 +8,7 @@ import com.nada.music.data.db.toEntity
 import com.nada.music.data.importer.PlaylistLink
 import com.nada.music.data.importer.SpotifyPlaylist
 import com.nada.music.data.importer.SpotifyTrack
+import com.nada.music.data.importer.VideoLink
 import com.nada.music.data.importer.pickBestMatch
 import com.nada.music.data.local.LocalMusic
 import com.nada.music.data.lyrics.LrcLib
@@ -34,6 +35,28 @@ class MusicRepository(
     // ---- Online ----
 
     suspend fun search(query: String): SearchResult = YouTubeMusic.search(query)
+
+    /** Pencarian YouTube biasa, untuk video yang tidak ada di katalog YouTube Music. */
+    suspend fun searchYouTube(query: String): SearchResult = YouTubeMusic.searchYouTube(query)
+
+    /**
+     * Lagu dari link yang ditempel atau dibagikan: link video → lagu itu saja,
+     * link playlist / mix YouTube → isi playlistnya. Null kalau teks bukan link.
+     * @throws LinkError kalau link dikenali tapi tidak bisa dipakai di sini.
+     */
+    suspend fun songsFromLink(text: String): List<Song>? {
+        VideoLink.parseId(text)?.let { return listOf(YouTubeMusic.video(it)) }
+        when (val link = PlaylistLink.parse(text)) {
+            is PlaylistLink.YouTube -> return YouTubeMusic.playlist(link.url, if (PlaylistLink.isEndlessMix(link.listId)) MAX_MIX_SONGS else MAX_PLAYLIST_SONGS).songs
+            is PlaylistLink.Spotify -> throw LinkError("Link Spotify bisa diimpor lewat Pustaka → Impor playlist.")
+            null -> Unit
+        }
+        if (VideoLink.isYouTubeLink(text)) throw LinkError("Link YouTube ini bukan link video atau playlist.")
+        return null
+    }
+
+    /** Link dikenali tapi tidak bisa dibuka dari kolom cari. Pesannya langsung ditampilkan. */
+    class LinkError(message: String) : Exception(message)
 
     suspend fun searchMore(query: String, filter: String, page: Page): SearchResult =
         YouTubeMusic.searchMore(query, filter, page)

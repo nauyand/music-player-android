@@ -47,28 +47,65 @@ object YouTubeMusic {
         // Di beberapa wilayah / jaringan YouTube Music tidak memberi kategori "Songs".
         // Kalau kosong, pakai kategori "Videos" milik YouTube Music.
         YoutubeSearchQueryHandlerFactory.MUSIC_VIDEOS,
+        // Terakhir: pencarian YouTube biasa (kompilasi, cover, lagu daerah dari channel kecil).
+        YoutubeSearchQueryHandlerFactory.VIDEOS,
     )
 
+    /** Filter pencarian YouTube biasa (bukan YouTube Music). */
+    const val YOUTUBE_FILTER = YoutubeSearchQueryHandlerFactory.VIDEOS
+
+    /** Cari di YouTube Music; kalau kosong, jatuh ke YouTube biasa. */
     suspend fun search(query: String): SearchResult = withContext(Dispatchers.IO) {
         for (filter in SEARCH_FILTERS) {
-            val extractor = service.getSearchExtractor(query, listOf(filter), "")
-            extractor.fetchPage()
-            val page = extractor.initialPage
-            val songs = page.items.mapNotNull { (it as? StreamInfoItem)?.toSong() }
-            if (songs.isNotEmpty()) return@withContext SearchResult(songs, page.nextPage, filter)
+            val result = searchWith(query, filter)
+            if (result.songs.isNotEmpty()) return@withContext result
         }
         SearchResult(emptyList(), null, SEARCH_FILTERS.first())
+    }
+
+    /** Cari di YouTube biasa, seperti kolom cari di aplikasi YouTube. */
+    suspend fun searchYouTube(query: String): SearchResult = withContext(Dispatchers.IO) {
+        searchWith(query, YOUTUBE_FILTER)
+    }
+
+    private fun searchWith(query: String, filter: String): SearchResult {
+        val extractor = service.getSearchExtractor(query, listOf(filter), "")
+        extractor.fetchPage()
+        val page = extractor.initialPage
+        return SearchResult(page.items.toPlayableSongs(), page.nextPage, filter)
     }
 
     suspend fun searchMore(query: String, filter: String, page: Page): SearchResult =
         withContext(Dispatchers.IO) {
             val result = service.getSearchExtractor(query, listOf(filter), "").getPage(page)
             SearchResult(
-                songs = result.items.mapNotNull { (it as? StreamInfoItem)?.toSong() },
+                songs = result.items.toPlayableSongs(),
                 nextPage = result.nextPage,
                 filter = filter,
             )
         }
+
+    /** Siaran yang sedang berlangsung tidak bisa diputar sebagai audio biasa, jadi dibuang dari hasil cari. */
+    private fun List<*>.toPlayableSongs(): List<Song> = mapNotNull { item ->
+        (item as? StreamInfoItem)?.takeIf { it.streamType !in LIVE_NOW }?.toSong()
+    }
+
+    /**
+     * Data satu video dari link yang ditempel atau dibagikan. Info streamnya sekalian disimpan,
+     * jadi lagu bisa langsung diputar tanpa mengambil ulang.
+     */
+    suspend fun video(videoId: String): Song = withContext(Dispatchers.IO) {
+        val info = StreamInfo.getInfo(service, watchUrl(videoId))
+        if (info.streamType in LIVE_NOW) throw IllegalStateException("Siaran langsung tidak bisa diputar")
+        runCatching { cacheFrom(videoId, info) }
+        Song(
+            id = videoId,
+            title = info.name.orEmpty(),
+            artist = info.uploaderName.orEmpty().removeSuffix(" - Topic"),
+            thumbnailUrl = info.thumbnails.bestUrl() ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
+            durationSec = info.duration,
+        )
+    }
 
     suspend fun suggestions(query: String): List<String> = withContext(Dispatchers.IO) {
         runCatching { service.suggestionExtractor.suggestionList(query) }.getOrDefault(emptyList())
@@ -123,8 +160,11 @@ object YouTubeMusic {
         cache.remove(videoId)
     }
 
-    private fun fetch(videoId: String): CachedInfo {
-        val info = StreamInfo.getInfo(service, "https://www.youtube.com/watch?v=$videoId")
+    private fun watchUrl(videoId: String) = "https://www.youtube.com/watch?v=$videoId"
+
+    private fun fetch(videoId: String): CachedInfo = cacheFrom(videoId, StreamInfo.getInfo(service, watchUrl(videoId)))
+
+    private fun cacheFrom(videoId: String, info: StreamInfo): CachedInfo {
         val audio = pickBestAudio(info.audioStreams)
             ?: throw IllegalStateException("Tidak ada stream audio untuk $videoId")
         val url = audio.content
@@ -204,6 +244,9 @@ object YouTubeMusic {
         StreamType.POST_LIVE_STREAM,
         StreamType.POST_LIVE_AUDIO_STREAM,
     )
+
+    /** Siaran yang sedang berlangsung. Rekaman siaran yang sudah selesai tetap bisa diputar. */
+    private val LIVE_NOW = setOf(StreamType.LIVE_STREAM, StreamType.AUDIO_LIVE_STREAM)
 
     private fun List<Image>.bestUrl(): String? = maxByOrNull { it.height }?.url
 }

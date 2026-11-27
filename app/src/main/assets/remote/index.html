@@ -49,6 +49,8 @@
   .search input { width: 100%; padding: 11px 14px; border-radius: 10px; border: 1px solid var(--line);
     background: var(--panel); outline: none; }
   .search input:focus { border-color: var(--accent); }
+  .search label { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--muted); font-size: 13px; cursor: pointer; }
+  .search label input { width: auto; padding: 0; }
   .list { flex: 1; overflow-y: auto; padding: 10px 12px 24px; }
   .row { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 10px; cursor: pointer; }
   .row:hover { background: var(--panel); }
@@ -116,7 +118,7 @@
       <button class="tab" data-tab="history">Riwayat</button>
       <button class="tab" data-tab="playlists">Playlist</button>
     </nav>
-    <div class="search" id="searchBox"><input id="q" placeholder="Cari lagu atau penyanyi, lalu Enter" autocomplete="off"></div>
+    <div class="search" id="searchBox"><input id="q" placeholder="Cari lagu, penyanyi, atau tempel link YouTube, lalu Enter" autocomplete="off"><label><input type="checkbox" id="yt"> Cari di YouTube biasa (bukan YouTube Music)</label></div>
     <div class="list" id="list"></div>
   </section>
 </div>
@@ -300,7 +302,7 @@ $("q").onkeydown = async (e) => {
   const q = $("q").value.trim();
   if (!q) return;
   $("list").innerHTML = `<div class="empty">Mencari “${esc(q)}”…</div>`;
-  try { lastSearch = { q, songs: (await api("/api/search?q=" + encodeURIComponent(q))).songs }; }
+  try { lastSearch = { q, songs: (await api("/api/search?q=" + encodeURIComponent(q) + ($("yt").checked ? "&source=youtube" : ""))).songs }; }
   catch (err) { lastSearch = { q, songs: [] }; flash(err.message); }
   renderList();
 };

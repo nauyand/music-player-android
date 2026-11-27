@@ -25,7 +25,9 @@ import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.MusicOff
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -53,6 +55,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nada.music.NadaApp
 import com.nada.music.data.MusicRepository
 import com.nada.music.data.Song
+import com.nada.music.data.importer.PlaylistLink
+import com.nada.music.data.importer.VideoLink
+import com.nada.music.data.youtube.YouTubeMusic
+import com.nada.music.ui.SharedLink
 import com.nada.music.ui.LocalPlayer
 import com.nada.music.ui.components.EmptyState
 import com.nada.music.ui.components.SongRow
@@ -70,6 +76,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.schabi.newpipe.extractor.Page
 
+/** Tempat mencari: katalog YouTube Music (default) atau YouTube biasa. */
+enum class SearchSource { MUSIC, YOUTUBE }
+
 sealed interface SearchState {
     data object Idle : SearchState
     data object Loading : SearchState
@@ -80,7 +89,14 @@ sealed interface SearchState {
         val filter: String,
         val nextPage: Page?,
         val loadingMore: Boolean = false,
-    ) : SearchState
+        /** Hasil dari link yang ditempel / dibagikan, bukan dari pencarian. */
+        val fromLink: Boolean = false,
+        /** Lagu pertama langsung diputar (link dibagikan dari aplikasi lain). */
+        val autoPlay: Boolean = false,
+    ) : SearchState {
+        /** YouTube Music tidak punya hasil, jadi yang tampil hasil dari YouTube biasa. */
+        val fellBackToYouTube get() = !fromLink && filter == YouTubeMusic.YOUTUBE_FILTER
+    }
 }
 
 @OptIn(FlowPreview::class)
@@ -99,6 +115,9 @@ class SearchViewModel(private val repository: MusicRepository) : ViewModel() {
     val recentQueries: StateFlow<List<String>> = _recentQueries.asStateFlow()
 
     /** true saat pengguna sedang mengetik (tampilkan saran, bukan hasil). */
+    private val _source = MutableStateFlow(SearchSource.MUSIC)
+    val source: StateFlow<SearchSource> = _source.asStateFlow()
+
     private val _editing = MutableStateFlow(true)
     val editing: StateFlow<Boolean> = _editing.asStateFlow()
 
@@ -120,20 +139,49 @@ class SearchViewModel(private val repository: MusicRepository) : ViewModel() {
         _editing.value = true
     }
 
-    fun search(q: String = _query.value) {
+    fun setSource(value: SearchSource) {
+        if (_source.value == value) return
+        _source.value = value
+        val current = _state.value
+        if (current is SearchState.Results && !current.fromLink) search(current.query)
+    }
+
+    /**
+     * @param autoPlay true untuk link yang dibagikan dari aplikasi lain: lagunya langsung diputar.
+     */
+    fun search(q: String = _query.value, autoPlay: Boolean = false) {
         val text = q.trim()
         if (text.isEmpty()) return
         _query.value = text
         _editing.value = false
-        _recentQueries.update { (listOf(text) + it.filter { old -> !old.equals(text, true) }).take(10) }
+        val isLink = VideoLink.isYouTubeLink(text) || PlaylistLink.parse(text) != null
+        // Link tidak masuk riwayat pencarian, karena isinya panjang dan jarang dicari ulang.
+        if (!isLink) {
+            _recentQueries.update { (listOf(text) + it.filter { old -> !old.equals(text, true) }).take(10) }
+        }
+        val source = _source.value
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
             _state.value = SearchState.Loading
-            _state.value = runCatching { repository.search(text) }.fold(
-                onSuccess = { SearchState.Results(text, it.songs, it.filter, it.nextPage) },
-                onFailure = { SearchState.Error(friendlyError(it)) },
-            )
+            _state.value = runCatching {
+                val linkSongs = repository.songsFromLink(text)
+                if (linkSongs != null) {
+                    SearchState.Results(text, linkSongs, LINK_FILTER, null, fromLink = true, autoPlay = autoPlay)
+                } else {
+                    val result = when (source) {
+                        SearchSource.MUSIC -> repository.search(text)
+                        SearchSource.YOUTUBE -> repository.searchYouTube(text)
+                    }
+                    SearchState.Results(text, result.songs, result.filter, result.nextPage)
+                }
+            }.getOrElse {
+                SearchState.Error(if (it is MusicRepository.LinkError) it.message.orEmpty() else friendlyError(it))
+            }
         }
+    }
+
+    fun autoPlayHandled() {
+        _state.update { if (it is SearchState.Results) it.copy(autoPlay = false) else it }
     }
 
     fun loadMore() {
@@ -164,6 +212,10 @@ class SearchViewModel(private val repository: MusicRepository) : ViewModel() {
         _suggestions.value = emptyList()
         _state.value = SearchState.Idle
     }
+
+    private companion object {
+        const val LINK_FILTER = "link"
+    }
 }
 
 @Composable
@@ -175,12 +227,32 @@ fun SearchScreen(contentPadding: PaddingValues) {
     val suggestions by vm.suggestions.collectAsState()
     val recent by vm.recentQueries.collectAsState()
     val editing by vm.editing.collectAsState()
+    val source by vm.source.collectAsState()
     val currentSong by player.currentSong.collectAsState()
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
 
     LaunchedEffect(Unit) {
-        if (state is SearchState.Idle) focusRequester.requestFocus()
+        if (state is SearchState.Idle && SharedLink.pending.value == null) focusRequester.requestFocus()
+    }
+
+    // Link yang dibagikan dari aplikasi lain (YouTube -> Bagikan -> Nautify).
+    LaunchedEffect(Unit) {
+        SharedLink.pending.collect { text ->
+            if (text != null) {
+                SharedLink.consume()
+                focusManager.clearFocus()
+                vm.search(text, autoPlay = true)
+            }
+        }
+    }
+
+    LaunchedEffect(state) {
+        val s = state
+        if (s is SearchState.Results && s.autoPlay) {
+            vm.autoPlayHandled()
+            if (s.songs.isNotEmpty()) player.playSongs(s.songs, 0)
+        }
     }
 
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
@@ -192,7 +264,7 @@ fun SearchScreen(contentPadding: PaddingValues) {
                 .padding(horizontal = 16.dp, vertical = 8.dp)
                 .glass(shape = RoundedCornerShape(28.dp))
                 .focusRequester(focusRequester),
-            placeholder = { Text("Cari lagu, artis…") },
+            placeholder = { Text("Cari lagu, artis, atau tempel link YouTube") },
             leadingIcon = { Icon(Icons.Rounded.Search, null) },
             trailingIcon = {
                 if (query.isNotEmpty()) {
@@ -213,6 +285,8 @@ fun SearchScreen(contentPadding: PaddingValues) {
                 focusManager.clearFocus()
             }),
         )
+
+        SourceChips(selected = source, onSelect = { vm.setSource(it) })
 
         val showSuggestions = editing && (state !is SearchState.Results || query.isNotBlank()) &&
             (suggestions.isNotEmpty() || (query.isBlank() && recent.isNotEmpty()))
@@ -248,7 +322,7 @@ fun SearchScreen(contentPadding: PaddingValues) {
             SearchState.Idle -> EmptyState(
                 icon = Icons.Rounded.Search,
                 title = "Cari musik",
-                message = "Ketik judul lagu atau nama artis dari YouTube Music.",
+                message = "Ketik judul lagu atau nama artis, atau tempel link video / playlist YouTube.",
                 modifier = Modifier.padding(top = 48.dp),
             )
 
@@ -271,8 +345,21 @@ fun SearchScreen(contentPadding: PaddingValues) {
                         title = "Tidak ditemukan",
                         message = "Tidak ada hasil untuk \"${s.query}\".",
                         modifier = Modifier.padding(top = 48.dp),
+                        action = if (source == SearchSource.MUSIC && !s.fromLink) {
+                            { Button(onClick = { vm.setSource(SearchSource.YOUTUBE) }) { Text("Cari di YouTube") } }
+                        } else {
+                            null
+                        },
                     )
                 } else {
+                    if (s.fellBackToYouTube && source == SearchSource.MUSIC) {
+                        Text(
+                            "Tidak ada di YouTube Music, ini hasil dari YouTube.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                        )
+                    }
                     ResultsList(
                         results = s,
                         currentSongId = currentSong?.id,
@@ -316,5 +403,24 @@ private fun ResultsList(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SourceChips(selected: SearchSource, onSelect: (SearchSource) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FilterChip(
+            selected = selected == SearchSource.MUSIC,
+            onClick = { onSelect(SearchSource.MUSIC) },
+            label = { Text("YouTube Music") },
+        )
+        FilterChip(
+            selected = selected == SearchSource.YOUTUBE,
+            onClick = { onSelect(SearchSource.YOUTUBE) },
+            label = { Text("YouTube") },
+        )
     }
 }
