@@ -13,6 +13,8 @@ import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -83,7 +85,9 @@ class JarvisVoice(private val context: Context) {
                             tokens = File(dir, "tokens.txt").absolutePath,
                             dataDir = File(dir, "espeak-ng-data").absolutePath,
                         ),
-                        numThreads = 2,
+                        // 1 thread: dengan 2 thread, thread pool onnxruntime pernah crash
+                        // ("Scudo: invalid chunk state") di tengah generate() pada HP vivo.
+                        numThreads = 1,
                     ),
                 ),
             )
@@ -145,7 +149,14 @@ class JarvisVoice(private val context: Context) {
         }
     }
 
+    /**
+     * Melepas model. Ditunggu sampai suara yang sedang dibuat selesai, karena membebaskan model
+     * saat generate() masih berjalan di thread lain membuat aplikasi crash (memori native rusak).
+     */
     fun release() {
+        runBlocking {
+            withTimeoutOrNull(RELEASE_WAIT_MS) { mutex.lock() }
+        }
         cache.clear()
         kokoro?.free()
         kokoro = null
@@ -155,5 +166,6 @@ class JarvisVoice(private val context: Context) {
 
     private companion object {
         const val TAG = "JarvisVoice"
+        const val RELEASE_WAIT_MS = 5_000L
     }
 }

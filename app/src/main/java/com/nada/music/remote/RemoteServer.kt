@@ -7,6 +7,7 @@ import androidx.media3.common.Player
 import com.nada.music.NadaApp
 import com.nada.music.data.Song
 import com.nada.music.playback.PlayerConnection
+import com.nada.music.playback.SmartShuffle
 import fi.iki.elonen.NanoHTTPD
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -22,7 +23,7 @@ import kotlin.math.roundToInt
  *
  * - `GET /`                 halaman remote (assets/remote/index.html)
  * - `GET /api/state`        lagu sekarang, posisi, volume, antrean
- * - `POST /api/cmd`         {action: play|pause|toggle|next|prev|seek|volume|shuffle|repeat|skip|remove|restart}
+ * - `POST /api/cmd`         {action: play|pause|toggle|next|prev|seek|volume|shuffle|smart|repeat|skip|remove|restart}
  * - `GET /api/search?q=`    cari lagu
  * - `GET /api/library`      lagu disukai, riwayat, daftar playlist
  * - `GET /api/playlist?id=` isi playlist
@@ -114,6 +115,7 @@ class RemoteServer(
             .put("duration", player.duration)
             .put("volume", audio.getStreamVolume(AudioManager.STREAM_MUSIC) * 100 / maxVol)
             .put("shuffle", player.shuffle.value)
+            .put("smart", SmartShuffle.enabled.value)
             .put("repeat", repeatName(player.repeatMode.value))
             .put("index", player.currentIndex.value)
             .put("queue", player.queue.value.toJson())
@@ -138,6 +140,10 @@ class RemoteServer(
                 } else {
                     player.cycleRepeat()
                 }
+                "smart" -> SmartShuffle.set(
+                    context,
+                    if (body.has("value")) body.optBoolean("value") else !SmartShuffle.enabled.value,
+                )
                 "skip" -> player.skipTo(body.optInt("index"))
                 "remove" -> player.removeFromQueue(body.optInt("index"))
                 "volume" -> {

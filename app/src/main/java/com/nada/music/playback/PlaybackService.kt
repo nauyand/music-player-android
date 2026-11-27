@@ -36,6 +36,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
+import android.util.Log
+import com.nada.music.data.Song
+import com.nada.music.data.local.LocalMusic
 
 /**
  * Service pemutar musik. Berjalan di background, menampilkan notifikasi media,
@@ -93,6 +101,10 @@ class PlaybackService : MediaSessionService() {
             .build()
 
         player.addListener(PlayerListener())
+        // Acak pintar dinyalakan: ganti lagu radio yang belum diputar dengan campuran baru.
+        scope.launch {
+            SmartShuffle.enabled.drop(1).collect { on -> if (on) refreshRadioForSmartShuffle() }
+        }
 
         // Terapkan pengaturan audio setiap kali diubah dari layar Efek Audio.
         scope.launch {
@@ -201,26 +213,73 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
+    /** Lagu yang ditambahkan otomatis oleh radio (bukan dipilih pengguna). */
+    private val radioIds = HashSet<String>()
+
     /**
      * Radio otomatis: saat lagu terakhir di antrean diputar, tambahkan lagu-lagu
-     * terkait supaya musik tidak berhenti.
+     * terkait supaya musik tidak berhenti. Kalau "acak pintar" aktif, yang ditambahkan
+     * campuran riwayat, favorit, dan lagu terkait (lihat [SmartShuffle]).
      */
-    private fun maybeExtendWithRadio() {
+    private fun maybeExtendWithRadio(force: Boolean = false) {
         if (player.repeatMode != Player.REPEAT_MODE_OFF) return
         if (player.currentMediaItemIndex < player.mediaItemCount - 1) return
-        val currentId = player.currentMediaItem?.mediaId ?: return
-        if (radioLoadingFor == currentId) return
+        val currentItem = player.currentMediaItem ?: return
+        val currentId = currentItem.mediaId
+        if (radioLoadingFor == currentId && !force) return
         radioLoadingFor = currentId
 
         scope.launch {
-            val related = runCatching {
-                (application as NadaApp).repository.related(currentId)
-            }.getOrDefault(emptyList())
-            val existing = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }.toSet()
-            val toAdd = related.filter { it.id !in existing }.take(10)
+            val queue = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).toSong() }
+            val existing = queue.map { it.id }.toSet()
+            val toAdd = runCatching {
+                if (SmartShuffle.enabled.value) {
+                    smartBatch(currentItem.toSong(), queue)
+                } else {
+                    (application as NadaApp).repository.related(currentId).filter { it.id !in existing }.take(10)
+                }
+            }.onFailure { Log.w(TAG, "Radio gagal", it) }.getOrDefault(emptyList())
             if (toAdd.isNotEmpty() && player.currentMediaItem?.mediaId == currentId) {
+                radioIds += toAdd.map { it.id }
                 player.addMediaItems(toAdd.map { it.toMediaItem() })
             }
         }
+    }
+
+    private suspend fun smartBatch(current: Song, queue: List<Song>): List<Song> = coroutineScope {
+        val repo = (application as NadaApp).repository
+        val personal = (repo.history.first() + repo.mostPlayed.first() + repo.likedSongs.first())
+            .distinctBy { it.id }
+        val currentKey = SmartShuffle.titleKey(current.title)
+        val relatedNow = async { runCatching { repo.related(current.id) }.getOrDefault(emptyList()) }
+        // Lagu "benih": lagu lain yang pernah didengar (atau, untuk pengguna baru, lagu terkait).
+        val seedPool = personal.ifEmpty { relatedNow.await() }
+            .filter { !LocalMusic.isLocal(it.id) && it.id != current.id && SmartShuffle.titleKey(it.title) != currentKey }
+            .shuffled()
+            .take(SEED_COUNT)
+        val relatedSeeds = seedPool.map { seed -> async { runCatching { repo.related(seed.id) }.getOrDefault(emptyList()) } }
+            .awaitAll()
+            .flatten()
+        SmartShuffle.mix(current, relatedNow.await(), relatedSeeds, personal, queue)
+    }
+
+    /**
+     * Saat acak pintar baru dinyalakan: lagu-lagu radio yang belum diputar (sering isinya versi
+     * lain dari lagu yang sama) diganti dengan campuran acak pintar.
+     */
+    private fun refreshRadioForSmartShuffle() {
+        if (player.mediaItemCount == 0) return
+        val current = player.currentMediaItemIndex
+        for (i in player.mediaItemCount - 1 downTo current + 1) {
+            if (player.getMediaItemAt(i).mediaId in radioIds) player.removeMediaItem(i)
+        }
+        maybeExtendWithRadio(force = true)
+    }
+
+    private companion object {
+        const val TAG = "PlaybackService"
+
+        /** Berapa lagu dari riwayat yang dipakai sebagai sumber lagu terkait. */
+        const val SEED_COUNT = 2
     }
 }

@@ -42,6 +42,7 @@ class NadaApp : Application(), ImageLoaderFactory {
         )
 
         AudioSettingsStore.init(this)
+        com.nada.music.playback.SmartShuffle.load(this)
 
         val db = AppDatabase.create(this)
         repository = MusicRepository(db.dao(), LrcLib(okHttpClient), SpotifyPlaylist(okHttpClient))
