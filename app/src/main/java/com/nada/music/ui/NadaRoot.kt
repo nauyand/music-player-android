@@ -105,6 +105,12 @@ fun NadaRoot(openPlayerRequest: MutableState<Boolean>) {
         }
     }
 
+    // Link yang dibagikan dari aplikasi lain dibuka di layar Cari.
+    val sharedLink by SharedLink.pending.collectAsState()
+    LaunchedEffect(sharedLink) {
+        if (sharedLink != null && nav.currentDestination?.route != Routes.SEARCH) nav.switchTab(Routes.SEARCH)
+    }
+
     // Daftar lagu bisa digulir sampai ke bawah dock, tapi item terakhir tidak tertutup.
     val listPadding = PaddingValues(bottom = with(density) { dockHeightPx.toDp() } + 8.dp)
 

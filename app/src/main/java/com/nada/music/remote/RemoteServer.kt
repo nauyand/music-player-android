@@ -24,7 +24,7 @@ import kotlin.math.roundToInt
  * - `GET /`                 halaman remote (assets/remote/index.html)
  * - `GET /api/state`        lagu sekarang, posisi, volume, antrean
  * - `POST /api/cmd`         {action: play|pause|toggle|next|prev|seek|volume|shuffle|smart|repeat|skip|remove|restart}
- * - `GET /api/search?q=`    cari lagu
+ * - `GET /api/search?q=`    cari lagu (atau link YouTube); `&source=youtube` untuk YouTube biasa
  * - `GET /api/library`      lagu disukai, riwayat, daftar playlist
  * - `GET /api/playlist?id=` isi playlist
  * - `POST /api/play`        {songs: [...], index, shuffle} putar daftar lagu
@@ -63,7 +63,12 @@ class RemoteServer(
         return when (uri) {
             "/api/state" -> json(state())
             "/api/cmd" -> json(command(body(session)))
-            "/api/search" -> json(search(session.parameters["q"]?.firstOrNull().orEmpty()))
+            "/api/search" -> json(
+                search(
+                    query = session.parameters["q"]?.firstOrNull().orEmpty(),
+                    youtube = session.parameters["source"]?.firstOrNull() == "youtube",
+                ),
+            )
             "/api/library" -> json(library())
             "/api/playlist" -> json(playlist(session.parameters["id"]?.firstOrNull()?.toLongOrNull() ?: -1))
             "/api/play" -> json(play(body(session)))
@@ -159,9 +164,15 @@ class RemoteServer(
         return state()
     }
 
-    private fun search(query: String): JSONObject {
+    private fun search(query: String, youtube: Boolean): JSONObject {
         if (query.isBlank()) return JSONObject().put("songs", JSONArray())
-        val songs = runBlocking { withTimeout(SEARCH_TIMEOUT_MS) { app.repository.search(query).songs } }
+        val repo = app.repository
+        val songs = runBlocking {
+            withTimeout(SEARCH_TIMEOUT_MS) {
+                // Link YouTube yang ditempel langsung dibuka; teks biasa dicari (YouTube Music, lalu YouTube).
+                repo.songsFromLink(query) ?: if (youtube) repo.searchYouTube(query).songs else repo.search(query).songs
+            }
+        }
         return JSONObject().put("songs", songs.toJson())
     }
 

@@ -18,6 +18,7 @@ import com.nada.music.playback.PlayerConnection
 import com.nada.music.ui.LocalPlayer
 import com.nada.music.ui.LocalRepository
 import com.nada.music.ui.NadaRoot
+import com.nada.music.ui.SharedLink
 import com.nada.music.ui.theme.NadaTheme
 
 class MainActivity : ComponentActivity() {
@@ -76,6 +77,10 @@ class MainActivity : ComponentActivity() {
     private fun handleIntent(intent: Intent?) {
         if (intent?.getBooleanExtra(EXTRA_OPEN_PLAYER, false) == true) {
             openPlayerRequest.value = true
+        }
+        // Link dibagikan dari aplikasi lain (YouTube, browser, WhatsApp, ...).
+        if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
+            intent.getStringExtra(Intent.EXTRA_TEXT)?.let(SharedLink::offer)
         }
     }
 
