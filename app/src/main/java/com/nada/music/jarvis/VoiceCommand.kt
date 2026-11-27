@@ -30,6 +30,9 @@ sealed interface VoiceCommand {
     data object ShuffleOn : VoiceCommand
     data object ShuffleOff : VoiceCommand
 
+    /** Acak pintar: lagu berikutnya campuran riwayat, favorit, dan lagu terkait ("mode random"). */
+    data object SmartShuffle : VoiceCommand
+
     /** Ulangi lagu ini terus. */
     data object RepeatOne : VoiceCommand
 
@@ -127,8 +130,14 @@ sealed interface VoiceCommand {
         private val SHUFFLE_ON = setOf(
             "acak", "acak lagu", "acak lagunya", "shuffle", "shuffle on", "putar acak", "mode acak", "nyalakan acak",
         )
+        private val SMART_SHUFFLE = setOf(
+            "random", "mode random", "lagu random", "putar random", "putar lagu random", "acak pintar",
+            "mode acak pintar", "random mode", "smart shuffle", "putar lagu acak", "lagu acak", "random song",
+            "play random", "play something random", "putar apa aja", "putar apa saja", "terserah",
+        )
         private val SHUFFLE_OFF = setOf(
             "jangan acak", "matikan acak", "acak mati", "shuffle off", "stop shuffle", "urut", "putar berurutan",
+            "matikan random", "random off", "matikan acak pintar", "jangan random",
         )
         private val REPEAT_ONE = setOf(
             "ulangi lagu ini", "ulangi lagu", "ulang lagu ini", "repeat", "repeat one", "repeat this song",
@@ -184,6 +193,7 @@ sealed interface VoiceCommand {
                 in CANCEL -> return Cancel
                 in WHAT_IS_PLAYING -> return WhatIsPlaying
                 in RESTART -> return Restart
+                in SMART_SHUFFLE -> return SmartShuffle
                 in SHUFFLE_ON -> return ShuffleOn
                 in SHUFFLE_OFF -> return ShuffleOff
                 in REPEAT_ONE -> return RepeatOne

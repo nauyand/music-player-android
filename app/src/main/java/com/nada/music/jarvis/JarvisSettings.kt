@@ -17,8 +17,27 @@ enum class JarvisSensitivity(val label: String, val boost: Float, val threshold:
     VERY_HIGH("Sangat peka", boost = 3.0f, threshold = 0.08f),
     ;
 
-    /** Baris kata kunci untuk sherpa-onnx: token BPE, lalu boost (:), threshold (#), dan nama (@). */
-    val keywords: String get() = "▁JA R VI S :$boost #$threshold @JARVIS"
+    /**
+     * Kata kunci untuk sherpa-onnx: token BPE, lalu boost (:), threshold (#), dan nama (@).
+     * Beberapa pelafalan dipisah "/" dan semuanya dihitung sebagai "Jarvis".
+     */
+    val keywords: String get() = PRONUNCIATIONS.joinToString("/") { "$it :$boost #$threshold @JARVIS" }
+
+    companion object {
+        /**
+         * Model wake word dilatih dengan bahasa Inggris, sedangkan lidah Indonesia sering
+         * mengucapkan "Jarvis" sebagai "jar-fis", "jar-pis", "jer-vis", atau "ja-vis".
+         * Diuji dengan suara sintetis: deteksi naik, kalimat sehari-hari tidak ikut terpanggil.
+         */
+        val PRONUNCIATIONS = listOf(
+            "▁JA R VI S", // jarvis
+            "▁JA R F IS", // jarfis
+            "▁JA R P IS", // jarpis
+            "▁JA R B IS", // jarbis
+            "▁JE R VI S", // jervis
+            "▁JA VI S", // ja-vis (r hilang)
+        )
+    }
 }
 
 /** Pengaturan Jarvis yang disimpan di HP. */

@@ -28,6 +28,10 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.AutoAwesome
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import com.nada.music.playback.SmartShuffle
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material3.CircularProgressIndicator
@@ -234,6 +238,8 @@ private fun Controls() {
     val isPlaying by player.isPlaying.collectAsState()
     val isBuffering by player.isBuffering.collectAsState()
     val shuffle by player.shuffle.collectAsState()
+    val smart by SmartShuffle.enabled.collectAsState()
+    val context = LocalContext.current
     val repeatMode by player.repeatMode.collectAsState()
     val error by player.error.collectAsState()
 
@@ -242,11 +248,34 @@ private fun Controls() {
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = player::toggleShuffle) {
+        // Ketuk berulang: acak mati → acak antrean → acak pintar → acak mati.
+        IconButton(onClick = {
+            val message = when {
+                smart -> {
+                    SmartShuffle.set(context, false)
+                    player.setShuffle(false)
+                    "Acak mati"
+                }
+                shuffle -> {
+                    player.setShuffle(false)
+                    SmartShuffle.set(context, true)
+                    "Acak pintar: lagu berikutnya campuran riwayat, favorit & lagu terkait"
+                }
+                else -> {
+                    player.setShuffle(true)
+                    "Acak antrean"
+                }
+            }
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }) {
             Icon(
-                Icons.Rounded.Shuffle,
-                "Acak",
-                tint = if (shuffle) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                if (smart) Icons.Rounded.AutoAwesome else Icons.Rounded.Shuffle,
+                when {
+                    smart -> "Acak pintar"
+                    shuffle -> "Acak antrean"
+                    else -> "Acak mati"
+                },
+                tint = if (shuffle || smart) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         IconButton(onClick = player::previous, Modifier.size(56.dp)) {

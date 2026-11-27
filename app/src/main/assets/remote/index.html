@@ -96,6 +96,7 @@
       <button class="btn" id="prev" title="Sebelumnya"><svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg></button>
       <button class="btn big" id="toggle" title="Putar / jeda (spasi)"><svg viewBox="0 0 24 24" id="toggleIcon"><path d="M8 5v14l11-7z"/></svg></button>
       <button class="btn" id="next" title="Berikutnya"><svg viewBox="0 0 24 24"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg></button>
+      <button class="btn" id="smart" title="Acak pintar: lagu berikutnya campuran riwayat, favorit &amp; lagu terkait"><svg viewBox="0 0 24 24"><path d="m19 9 1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9Zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5ZM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15Z"/></svg></button>
       <button class="btn" id="repeat" title="Ulangi"><svg viewBox="0 0 24 24" id="repeatIcon"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7Zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4Z"/></svg></button>
     </div>
     <div class="vol">
@@ -190,6 +191,7 @@ function render() {
   else { art.style.backgroundImage = ""; art.textContent = "♪"; }
   $("toggleIcon").innerHTML = state.playing ? PAUSE : PLAY;
   $("shuffle").classList.toggle("on", state.shuffle);
+  $("smart").classList.toggle("on", state.smart);
   $("repeat").classList.toggle("on", state.repeat !== "off");
   $("repeatIcon").innerHTML = state.repeat === "one" ? REPEAT_ONE : REPEAT;
   if (!seeking) {
@@ -308,6 +310,7 @@ $("next").onclick = () => send({ action: "next" });
 $("prev").onclick = () => send({ action: "prev" });
 $("shuffle").onclick = () => send({ action: "shuffle" });
 $("repeat").onclick = () => send({ action: "repeat" });
+$("smart").onclick = () => send({ action: "smart" }).then(() => flash(state && state.smart ? "Acak pintar aktif" : "Acak pintar mati"));
 
 $("seek").oninput = () => { seeking = true; if (state) $("pos").textContent = fmt($("seek").value / 1000 * state.duration); };
 $("seek").onchange = () => { seeking = false; if (state && state.duration) send({ action: "seek", ms: Math.round($("seek").value / 1000 * state.duration) }); };

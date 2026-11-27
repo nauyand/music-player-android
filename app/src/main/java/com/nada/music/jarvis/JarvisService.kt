@@ -19,6 +19,7 @@ import com.nada.music.MainActivity
 import com.nada.music.NadaApp
 import com.nada.music.R
 import com.nada.music.playback.PlayerConnection
+import com.nada.music.playback.SmartShuffle
 import androidx.media3.common.Player
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -257,7 +258,24 @@ class JarvisService : Service() {
                 player.setShuffle(true)
                 say("Shuffle is on, sir.")
             }
+            VoiceCommand.SmartShuffle -> {
+                SmartShuffle.set(this, true)
+                if (player.currentSong.value == null || !player.isPlaying.value) {
+                    // Belum ada lagu: mulai dari lagu acak yang pernah didengar, sisanya diisi acak pintar.
+                    val repo = (application as NadaApp).repository
+                    val start = (repo.history.first() + repo.likedSongs.first()).randomOrNull()
+                    if (start == null) {
+                        say("Smart shuffle is on, sir. Play any song and I'll mix the rest.")
+                    } else {
+                        say("Playing something random, sir.")
+                        player.playSongs(listOf(start))
+                    }
+                } else {
+                    say("Smart shuffle is on, sir.")
+                }
+            }
             VoiceCommand.ShuffleOff -> {
+                SmartShuffle.set(this, false)
                 player.setShuffle(false)
                 say("Shuffle is off, sir.")
             }
