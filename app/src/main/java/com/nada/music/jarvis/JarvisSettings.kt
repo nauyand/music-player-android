@@ -14,7 +14,8 @@ import kotlinx.coroutines.flow.asStateFlow
 enum class JarvisSensitivity(val label: String, val boost: Float, val threshold: Float) {
     NORMAL("Normal", boost = 1.0f, threshold = 0.25f),
     HIGH("Peka", boost = 2.0f, threshold = 0.15f),
-    VERY_HIGH("Sangat peka", boost = 3.0f, threshold = 0.08f),
+    // boost 3.0 malah melewatkan sebagian rekaman suara asli, jadi dibatasi 2.5.
+    VERY_HIGH("Sangat peka", boost = 2.5f, threshold = 0.10f),
     ;
 
     /**
@@ -28,6 +29,11 @@ enum class JarvisSensitivity(val label: String, val boost: Float, val threshold:
          * Model wake word dilatih dengan bahasa Inggris, sedangkan lidah Indonesia sering
          * mengucapkan "Jarvis" sebagai "jar-fis", "jar-pis", "jer-vis", atau "ja-vis".
          * Diuji dengan suara sintetis: deteksi naik, kalimat sehari-hari tidak ikut terpanggil.
+         *
+         * Rekaman suara pemakai asli lewat mikrofon HP terdengar oleh model sebagai "go to fish",
+         * "data fish", "dervish": "j" terdengar seperti d/g, "r" yang digetarkan seperti t/d, dan
+         * "vis" seperti "fish". Varian di bawah "dengan suara asli" menangkap semua rekaman itu,
+         * dan tidak terpanggil oleh kalimat bahasa Indonesia sehari-hari.
          */
         val PRONUNCIATIONS = listOf(
             "▁JA R VI S", // jarvis
@@ -36,6 +42,17 @@ enum class JarvisSensitivity(val label: String, val boost: Float, val threshold:
             "▁JA R B IS", // jarbis
             "▁JE R VI S", // jervis
             "▁JA VI S", // ja-vis (r hilang)
+            // dengan suara asli
+            "▁JA R V ISH",
+            "▁JA R F ISH",
+            "▁DE R V ISH",
+            "▁DA R V ISH",
+            "▁DA R F ISH",
+            "▁DE R ▁F ISH",
+            "▁DA TA ▁F ISH",
+            "▁JA TA ▁F ISH",
+            "▁GO ▁TO ▁F ISH",
+            "▁GO D O ▁F ISH",
         )
     }
 }
