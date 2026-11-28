@@ -66,6 +66,9 @@ class JarvisService : Service() {
     /** true selama HP sedang dipakai telepon / video call. */
     private var pausedForCall = false
 
+    /** true kalau mikrofon dibungkam sistem karena dipakai aplikasi lain. */
+    private var micBlocked = false
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -81,6 +84,11 @@ class JarvisService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             stopSelf()
+            return START_NOT_STICKY
+        }
+        // Tombol "Bicara" di notifikasi: langsung dengarkan perintah tanpa menunggu kata "Jarvis".
+        if (intent?.action == ACTION_TALK && started) {
+            scope.launch { onWake() }
             return START_NOT_STICKY
         }
         ServiceCompat.startForeground(
@@ -111,17 +119,40 @@ class JarvisService : Service() {
     private fun watchCalls() = scope.launch {
         pausedForCall = isInCall()
         if (pausedForCall) updateNotification() else startDetector()
+        var deadSeconds = 0
         while (isActive) {
             delay(1000)
             val inCall = isInCall()
-            if (inCall == pausedForCall) continue
-            pausedForCall = inCall
-            if (inCall) {
-                detector.stop()
-            } else if (!busy) {
-                startDetector()
+            if (inCall != pausedForCall) {
+                pausedForCall = inCall
+                Log.i(TAG, if (inCall) "Telepon: Jarvis dijeda" else "Telepon selesai: Jarvis mendengarkan lagi")
+                if (inCall) {
+                    detector.stop()
+                } else if (!busy) {
+                    startDetector()
+                }
+                updateNotification()
+                deadSeconds = 0
+                continue
             }
-            updateNotification()
+
+            // Pengaman: kalau mikrofon berhenti sendiri (gagal dibuka setelah telepon, diambil
+            // aplikasi lain, error), coba nyalakan lagi setiap beberapa detik. Dulu Jarvis bisa
+            // diam selamanya sampai aplikasi dibuka ulang.
+            if (!pausedForCall && !busy && !detector.isListening) {
+                if (deadSeconds++ % RESTART_EVERY_S == 0) {
+                    Log.w(TAG, "Mikrofon Jarvis mati, menyalakan ulang")
+                    startDetector()
+                }
+            } else {
+                deadSeconds = 0
+            }
+
+            val blocked = !pausedForCall && detector.silenced
+            if (blocked != micBlocked) {
+                micBlocked = blocked
+                updateNotification()
+            }
         }
     }
 
@@ -389,14 +420,21 @@ class JarvisService : Service() {
         val stop = PendingIntent.getService(
             this, 1, Intent(this, JarvisService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE,
         )
+        val talk = PendingIntent.getService(
+            this, 2, Intent(this, JarvisService::class.java).setAction(ACTION_TALK), PendingIntent.FLAG_IMMUTABLE,
+        )
+        val (title, text) = when {
+            pausedForCall -> "Jarvis dijeda" to "Sedang telepon. Jarvis lanjut mendengarkan setelah telepon selesai."
+            micBlocked -> "Jarvis tidak bisa mendengar" to
+                "Mikrofon sedang dipakai aplikasi lain. Jarvis lanjut setelah aplikasi itu selesai."
+            else -> "Jarvis aktif" to "Ucapkan \"Jarvis\" lalu perintahmu, atau ketuk Bicara"
+        }
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(if (pausedForCall) "Jarvis dijeda" else "Jarvis aktif")
-            .setContentText(
-                if (pausedForCall) "Sedang telepon. Jarvis lanjut mendengarkan setelah telepon selesai."
-                else "Ucapkan \"Jarvis\" lalu perintahmu",
-            )
+            .setContentTitle(title)
+            .setContentText(text)
             .setContentIntent(open)
+            .addAction(0, "Bicara", talk)
             .addAction(0, "Matikan Jarvis", stop)
             .setOngoing(true)
             .setSilent(true)
@@ -417,6 +455,10 @@ class JarvisService : Service() {
         private const val CHANNEL_ID = "jarvis"
         private const val NOTIFICATION_ID = 42
         private const val ACTION_STOP = "com.nada.music.jarvis.STOP"
+        private const val ACTION_TALK = "com.nada.music.jarvis.TALK"
+
+        /** Jeda antar percobaan menyalakan ulang mikrofon yang mati sendiri. */
+        private const val RESTART_EVERY_S = 3
         private const val DUCK_FACTOR = 0.15f
         private const val VOLUME_STEPS = 2
 
