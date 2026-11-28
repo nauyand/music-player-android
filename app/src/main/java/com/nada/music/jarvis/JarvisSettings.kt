@@ -22,7 +22,12 @@ enum class JarvisSensitivity(val label: String, val boost: Float, val threshold:
      * Kata kunci untuk sherpa-onnx: token BPE, lalu boost (:), threshold (#), dan nama (@).
      * Beberapa pelafalan dipisah "/" dan semuanya dihitung sebagai "Jarvis".
      */
-    val keywords: String get() = PRONUNCIATIONS.joinToString("/") { "$it :$boost #$threshold @JARVIS" }
+    val keywords: String
+        get() = (
+            PRONUNCIATIONS.map { "$it :$boost #$threshold @JARVIS" } +
+                // Pola pendek lebih mudah salah dengar, jadi tidak ikut dibuat lebih peka dari "Peka".
+                LOOSE.map { "$it :${minOf(boost, HIGH.boost)} #${maxOf(threshold, HIGH.threshold)} @JARVIS" }
+            ).joinToString("/")
 
     companion object {
         /**
@@ -32,8 +37,9 @@ enum class JarvisSensitivity(val label: String, val boost: Float, val threshold:
          *
          * Rekaman suara pemakai asli lewat mikrofon HP terdengar oleh model sebagai "go to fish",
          * "data fish", "dervish": "j" terdengar seperti d/g, "r" yang digetarkan seperti t/d, dan
-         * "vis" seperti "fish". Varian di bawah "dengan suara asli" menangkap semua rekaman itu,
-         * dan tidak terpanggil oleh kalimat bahasa Indonesia sehari-hari.
+         * "vis" seperti "fish". Varian "dengan suara asli" diambil dari 18 rekaman panggilan
+         * pemakai dan diuji terhadap 27 rekaman obrolan kantor yang asli: tidak ada yang ikut
+         * terpanggil.
          */
         val PRONUNCIATIONS = listOf(
             "▁JA R VI S", // jarvis
@@ -53,6 +59,29 @@ enum class JarvisSensitivity(val label: String, val boost: Float, val threshold:
             "▁JA TA ▁F ISH",
             "▁GO ▁TO ▁F ISH",
             "▁GO D O ▁F ISH",
+            "▁GO D F ISH",
+            "▁GOOD ▁F ISH",
+            "▁GOOD ▁A ▁F ISH",
+            "▁GOOD ▁OF ▁IS",
+            "▁YOUR ▁F ISH",
+            "▁NE AR ▁F ISH",
+            "▁OUT ER ▁F ISH",
+            "▁ Y ET ▁OF ▁HIS",
+            "▁ Y ET ▁W ISH",
+            "▁G ER TI SE",
+            "▁JO R D O PH Y",
+            "▁DE A TH Y",
+        )
+
+        /**
+         * Ujung kata "Jarvis" dari suara pemakai ("…fish", "…of his"), apa pun awalnya. Paling
+         * banyak menolong, tapi juga paling mudah salah dengar, jadi kepekaannya dibatasi.
+         */
+        val LOOSE = listOf(
+            "▁F ISH",
+            "▁W ISH",
+            "▁OF ▁HIS",
+            "▁OF ▁IS",
         )
     }
 }
